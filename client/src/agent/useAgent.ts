@@ -11,6 +11,7 @@ export type AgentState = {
 	connected: boolean
 	mode: ReviewMode
 	busy: boolean
+	speaking: boolean
 	activity: string
 	provider: string
 	participants: Participant[]
@@ -27,6 +28,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 		connected: false,
 		mode: 'on_request',
 		busy: false,
+		speaking: false,
 		activity: '',
 		provider: '',
 		participants: [],
@@ -84,7 +86,9 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					break
 				case 'agent_say':
 					addLog({ from: 'Professor Grok', text: msg.text, kind: 'agent' })
+					setState((s) => ({ ...s, speaking: true }))
 					speak(msg.text, () => {
+						setState((s) => ({ ...s, speaking: false }))
 						if (msg.report) send({ type: 'speech_done', sayId: msg.sayId })
 					})
 					break
@@ -99,6 +103,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					break
 				case 'stop_speech':
 					stopSpeaking()
+					setState((s) => ({ ...s, speaking: false }))
 					break
 				case 'focus':
 					void executor.run('focus_view', { shapeIds: msg.shapeIds, zoomLevel: msg.zoomLevel })
