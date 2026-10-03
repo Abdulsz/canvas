@@ -1,0 +1,20 @@
+{
+  "name": "grok-whiteboard",
+  "private": true,
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev -w server\" \"npm:dev -w client\"",
+    "build": "npm run build -w client",
+    "start": "npm run start -w server",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w client",
+    "test": "npm run test -w server",
+    "test:e2e": "node e2e/collab.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.4",
+    "playwright": "^1.63.0"
+  }
+}
