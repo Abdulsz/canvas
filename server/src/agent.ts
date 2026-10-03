@@ -227,7 +227,10 @@ export class AgentSession {
 					ALL_TOOLS,
 					abort.signal
 				)
-				this.pushHistory({ role: 'assistant', content: text, ...(toolCalls.length ? { tool_calls: toolCalls } : {}) })
+				// An empty final reply (no text, no tools) is not a valid history entry for the API.
+				if (text || toolCalls.length) {
+					this.pushHistory({ role: 'assistant', content: text ?? '', ...(toolCalls.length ? { tool_calls: toolCalls } : {}) })
+				}
 
 				// Let the previous line finish so drawing stays in step with the voice.
 				await speech

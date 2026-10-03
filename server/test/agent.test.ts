@@ -112,6 +112,8 @@ test('tool calls go to the requesting student; speech is broadcast to everyone',
 	assert.equal(alice.toolCalls().length, 0)
 	const aliceSays = alice.received.filter((m) => m.type === 'agent_say')
 	assert.ok(aliceSays.length >= 3 && aliceSays.every((m) => m.report === false))
+	const history: any[] = (agent as any).history
+	assert.ok(history.every((m) => m.role !== 'assistant' || typeof m.content === 'string'), 'no null assistant content in history')
 	// focus_view with scope "everyone" moves the other students' views too.
 	assert.ok(alice.received.some((m) => m.type === 'focus'))
 })
