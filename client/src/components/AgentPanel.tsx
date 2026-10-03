@@ -84,7 +84,7 @@ function Bubble({ entry, mine, showName }: { entry: LogEntry; mine: boolean; sho
 			<div
 				className={`max-w-[86%] whitespace-pre-wrap rounded-[18px] px-3.5 py-2 text-[14px] leading-[1.35] ${
 					mine
-						? 'rounded-br-[6px] bg-[var(--bubble-me)] text-white'
+						? 'rounded-br-[6px] bg-[var(--bubble-me)] text-[var(--on-accent)]'
 						: agent
 							? 'rounded-bl-[6px] bg-[var(--bubble-agent)] text-[var(--label)]'
 							: 'rounded-bl-[6px] bg-[var(--bubble-other)] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)]'
@@ -262,7 +262,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 
 				<div className="flex gap-2">
 					<button
-						className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[15px] font-semibold text-white shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_color-mix(in_srgb,var(--accent)_35%,transparent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
+						className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[15px] font-semibold text-[var(--on-accent)] shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_rgba(0,0,0,0.18)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
 						onClick={actions.checkWork}
 						disabled={!state.connected}
 						title="Ask Grok to review your drawing (only the selected shapes, if any)"
@@ -292,7 +292,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 							<div className="text-[13px] leading-snug text-[var(--label)]">{s.explanation || s.id}</div>
 							<div className="mt-2.5 flex gap-2">
 								<button
-									className="h-7 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-white transition hover:bg-[var(--accent-hover)] active:scale-95"
+									className="h-7 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-95"
 									onClick={() => acceptSuggestion(editor, s.id, { kind: 'user', id: me.userId, name: me.name })}
 								>
 									Accept
@@ -365,7 +365,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 				)}
 				<div className="flex h-9 min-w-0 flex-1 items-center rounded-full bg-[var(--card)] pl-4 pr-1 shadow-[0_0_0_0.5px_var(--separator)] transition focus-within:shadow-[0_0_0_1px_var(--accent)]">
 					<input
-						className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--label)] outline-none placeholder:text-[var(--label-3)]"
+						className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--label)] outline-none focus-visible:outline-none placeholder:text-[var(--label-3)]"
 						placeholder={listening ? 'Listening…' : 'Ask Professor Grok'}
 						value={text}
 						onChange={(e) => setText(e.target.value)}
@@ -374,7 +374,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 					<button
 						type="submit"
 						disabled={!text.trim()}
-						className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-white transition enabled:active:scale-90 disabled:scale-75 disabled:opacity-0"
+						className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] transition enabled:active:scale-90 disabled:scale-75 disabled:opacity-0"
 						aria-label="Send"
 					>
 						<SendIcon className="h-4 w-4" />

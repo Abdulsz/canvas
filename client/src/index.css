@@ -15,15 +15,16 @@
 	--material: rgba(255, 255, 255, 0.72);
 	--material-thick: rgba(255, 255, 255, 0.86);
 	--card: #ffffff;
-	--accent: #0071e3;
-	--accent-hover: #0077ed;
-	--accent-soft: rgba(0, 113, 227, 0.1);
+	--accent: #1d1d1f;
+	--accent-hover: #000000;
+	--accent-soft: rgba(0, 0, 0, 0.07);
+	--on-accent: #ffffff;
 	--green: #34c759;
 	--orange: #ff9f0a;
 	--red: #ff3b30;
 	--bubble-agent: #e9e9eb;
 	--bubble-other: #ffffff;
-	--bubble-me: #0071e3;
+	--bubble-me: #1d1d1f;
 	--shadow-panel: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04), 0 18px 48px rgba(0, 0, 0, 0.1);
 	--shadow-control: 0 0 0 0.5px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.08), 0 3px 8px rgba(0, 0, 0, 0.06);
 	--orb: conic-gradient(from 210deg, #5e5ce6, #bf5af2, #ff375f, #ff9f0a, #64d2ff, #5e5ce6);
@@ -41,15 +42,16 @@
 		--material: rgba(30, 30, 32, 0.72);
 		--material-thick: rgba(36, 36, 38, 0.9);
 		--card: #1c1c1e;
-		--accent: #0a84ff;
-		--accent-hover: #409cff;
-		--accent-soft: rgba(10, 132, 255, 0.18);
+		--accent: #f5f5f7;
+		--accent-hover: #ffffff;
+		--accent-soft: rgba(255, 255, 255, 0.12);
+		--on-accent: #000000;
 		--green: #30d158;
 		--orange: #ff9f0a;
 		--red: #ff453a;
 		--bubble-agent: #2c2c2e;
 		--bubble-other: #1c1c1e;
-		--bubble-me: #0a84ff;
+		--bubble-me: #f5f5f7;
 		--shadow-panel: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 18px 48px rgba(0, 0, 0, 0.5);
 		--shadow-control: 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.4);
 	}
@@ -153,7 +155,21 @@ body {
 	}
 }
 
-/* Blend tldraw's chrome with the app's materials. */
+/* Blend tldraw's chrome with the app's materials and monochrome accent. */
 .tl-container {
 	--tl-font-sans: var(--font-sans);
+	--tl-color-primary: #1d1d1f;
+	--tl-color-selected: #1d1d1f;
+	--tl-color-selected-contrast: #ffffff;
+	--tl-color-focus: rgba(0, 0, 0, 0.35);
+	--tl-color-selection-stroke: #1d1d1f;
+	--tl-color-selection-fill: rgba(29, 29, 31, 0.08);
+}
+.tl-container.tl-theme__dark {
+	--tl-color-primary: #f5f5f7;
+	--tl-color-selected: #f5f5f7;
+	--tl-color-selected-contrast: #000000;
+	--tl-color-focus: rgba(255, 255, 255, 0.4);
+	--tl-color-selection-stroke: #f5f5f7;
+	--tl-color-selection-fill: rgba(245, 245, 247, 0.12);
 }

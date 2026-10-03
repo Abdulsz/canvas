@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, useState } from 'react'
 import {
 	atom,
 	createUserId,
+	DEFAULT_THEME,
 	setUserPreferences,
 	Tldraw,
 	useEditor,
@@ -12,6 +13,7 @@ import {
 	type Editor,
 	type TLAssetStore,
 	type TLComponents,
+	type TLThemes,
 } from 'tldraw'
 import { AGENT_NAME } from '../../shared/protocol.ts'
 import { registerAuthorship } from './agent/authorship.ts'
@@ -75,6 +77,16 @@ function AgentCursor() {
 const components: TLComponents = { InFrontOfTheCanvas: AgentCursor }
 // Bundle fonts/icons/translations instead of loading them from tldraw's CDN.
 const assetUrls = getAssetUrlsByImport()
+// Monochrome selection to match the app's black/white accent.
+const themes: Partial<TLThemes> = {
+	default: {
+		...DEFAULT_THEME,
+		colors: {
+			light: { ...DEFAULT_THEME.colors.light, selectionStroke: '#1d1d1f', selectionFill: 'rgba(29, 29, 31, 0.08)' },
+			dark: { ...DEFAULT_THEME.colors.dark, selectionStroke: '#f5f5f7', selectionFill: 'rgba(245, 245, 247, 0.12)' },
+		},
+	},
+}
 
 export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 	const users = useMemo(() => {
@@ -87,6 +99,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 		uri: `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/sync/${roomId}`,
 		assets,
 		users,
+		themes,
 	})
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const agent = useAgent(roomId, me, editor)
@@ -98,6 +111,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 					<Tldraw
 						store={store}
 						assetUrls={assetUrls}
+						themes={themes}
 						licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
 						components={components}
 						onMount={(e) => {

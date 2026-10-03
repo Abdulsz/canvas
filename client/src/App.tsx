@@ -33,7 +33,7 @@ export function App() {
 					</p>
 					<input
 						autoFocus
-						className="mt-7 h-12 w-full rounded-[14px] bg-[var(--card)] px-4 text-[17px] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)] outline-none transition placeholder:text-[var(--label-3)] focus:shadow-[0_0_0_1.5px_var(--accent)]"
+						className="mt-7 h-12 w-full rounded-[14px] bg-[var(--card)] px-4 text-[17px] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)] outline-none focus-visible:outline-none transition placeholder:text-[var(--label-3)] focus:shadow-[0_0_0_1.5px_var(--accent)]"
 						placeholder="Your name"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
@@ -41,7 +41,7 @@ export function App() {
 						autoComplete="given-name"
 					/>
 					<button
-						className="mt-3 h-12 w-full rounded-[14px] bg-[var(--accent)] text-[17px] font-semibold text-white transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
+						className="mt-3 h-12 w-full rounded-[14px] bg-[var(--accent)] text-[17px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
 						type="submit"
 						disabled={!name.trim()}
 					>
