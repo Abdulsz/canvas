@@ -39,6 +39,7 @@ export type RealtimeConfig = {
 	model: string
 	voice: string
 	visionModel: string
+	reasoningEffort: 'none' | 'high'
 	/** Overrides the WebSocket URL (used with a local fake server in tests). */
 	urlOverride?: string
 }
@@ -51,7 +52,7 @@ export async function createRealtimeSession(cfg: RealtimeConfig, res: ServerResp
 			method: 'POST',
 			signal: AbortSignal.timeout(15_000),
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.apiKey}` },
-			body: JSON.stringify({ expires_after: { seconds: 600 }, session: { model: cfg.model } }),
+			body: JSON.stringify({ expires_after: { seconds: 600 }, session: { model: cfg.model, reasoning: { effort: cfg.reasoningEffort } } }),
 		})
 		if (!r.ok) {
 			return res.writeHead(502, { 'content-type': 'application/json' }).end(JSON.stringify({ error: `client_secrets ${r.status}: ${(await r.text()).slice(0, 300)}` }))
@@ -68,6 +69,8 @@ export async function createRealtimeSession(cfg: RealtimeConfig, res: ServerResp
 			expiresAt,
 			session: {
 				instructions: REALTIME_INSTRUCTIONS,
+				// Reasoning adds a noticeable pause before each reply; conversation matters more here.
+				reasoning: { effort: cfg.reasoningEffort },
 				voice: cfg.voice,
 				turn_detection: { type: 'server_vad' },
 				audio: {

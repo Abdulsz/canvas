@@ -4,7 +4,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
-import { AgentSession } from './agent.ts'
+import { ACKS, AgentSession, REVIEW_ACK } from './agent.ts'
 import { GrokProvider, type LLMProvider } from './llm.ts'
 import { MockProvider } from './mock.ts'
 import { RoomManager } from './rooms.ts'
@@ -23,7 +23,8 @@ function createProvider(): LLMProvider {
 		console.warn('[server] XAI_API_KEY not set: using the scripted mock agent.')
 		return new MockProvider()
 	}
-	return new GrokProvider(key, process.env.XAI_MODEL ?? 'grok-4.7', process.env.XAI_BASE_URL)
+	const opener = process.env.XAI_OPENER_MODEL === 'off' ? null : (process.env.XAI_OPENER_MODEL ?? 'grok-4.20-non-reasoning')
+	return new GrokProvider(key, process.env.XAI_MODEL ?? 'grok-4.7', process.env.XAI_BASE_URL, opener)
 }
 
 const realtime: RealtimeConfig | null =
@@ -34,6 +35,7 @@ const realtime: RealtimeConfig | null =
 				model: process.env.XAI_REALTIME_MODEL ?? 'grok-voice-latest',
 				voice: process.env.XAI_VOICE ?? 'ara',
 				visionModel: process.env.XAI_MODEL ?? 'grok-4.7',
+				reasoningEffort: process.env.XAI_REALTIME_REASONING === 'high' ? 'high' : 'none',
 				urlOverride: process.env.REALTIME_URL,
 			}
 		: null
@@ -42,6 +44,8 @@ const voice =
 	process.env.XAI_API_KEY && process.env.VOICE !== 'browser'
 		? new VoiceService(process.env.XAI_API_KEY, process.env.XAI_BASE_URL, process.env.XAI_VOICE ?? 'ara')
 		: null
+// Pre-synthesize the instant acknowledgements so they play with no delay.
+voice?.warm([...ACKS, REVIEW_ACK])
 
 const provider = createProvider()
 const rooms = new RoomManager(process.env.PERSIST === 'false' ? null : join(DATA_DIR, 'rooms'))
