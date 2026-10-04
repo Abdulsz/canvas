@@ -231,3 +231,25 @@ export const ALL_TOOLS: ToolDef[] = [...DRAWING_TOOLS, ...READING_TOOLS, ...FEED
 
 /** Tools that run on the server (no browser editor needed). */
 export const SERVER_TOOLS = new Set(['get_recent_changes'])
+
+/** Live voice mode only: the realtime voice model can't take images, so it asks a vision model. */
+export const LOOK_AT_BOARD: ToolDef = {
+	name: 'look_at_board',
+	description:
+		"Takes a picture of the board (or of specific shapes) and gets a description of what is drawn, including hand-drawn ink and handwriting. Use it before giving feedback on freehand or unlabeled drawings. Say a short line like 'Let me take a look' first.",
+	parameters: {
+		type: 'object',
+		properties: {
+			question: { type: 'string', description: 'What you want to know about the drawing' },
+			shapeIds: { type: 'array', items: { type: 'string' } },
+		},
+	},
+}
+
+/** Tools for live voice mode (run in the browser; no server-side tools). */
+export const REALTIME_TOOLS: ToolDef[] = [
+	...DRAWING_TOOLS,
+	...READING_TOOLS.filter((t) => t.name === 'get_canvas_state' || t.name === 'get_participants'),
+	LOOK_AT_BOARD,
+	...FEEDBACK_TOOLS,
+]

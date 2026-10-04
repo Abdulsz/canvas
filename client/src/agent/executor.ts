@@ -522,6 +522,30 @@ export class CanvasExecutor {
 	}
 }
 
+/**
+ * Client-side version of the server's guard, for live voice mode (whose tool
+ * calls don't pass through the server): returns a permission prompt when a
+ * call would change or erase a student's shapes.
+ */
+export function studentWorkPrompt(editor: Editor, name: string, args: Args): string | null {
+	const student = (ids: string[]) =>
+		ids.map((id) => editor.getShape(toId(id))).filter((s): s is TLShape => !!s && authorOf(s)?.kind !== 'agent')
+	let touched: TLShape[] = []
+	let verb = 'change'
+	if (name === 'update_shape' || name === 'create_shape') touched = student([String(args.id ?? '')])
+	else if (name === 'clear_canvas' && args.mode !== 'agent_only') {
+		verb = 'erase'
+		touched = Array.isArray(args.ids) && args.ids.length
+			? student(args.ids.map(String))
+			: args.mode === 'selection'
+				? editor.getSelectedShapes().filter((s) => authorOf(s)?.kind !== 'agent')
+				: editor.getCurrentPageShapes().filter((s) => authorOf(s)?.kind !== 'agent')
+	}
+	if (!touched.length) return null
+	const owners = [...new Set(touched.map((s) => authorOf(s)?.name ?? 'a student'))].join(', ')
+	return `Professor Grok wants to ${verb} ${touched.length} shape(s) drawn by ${owners}. Allow?`
+}
+
 /** Accept a suggestion: make it solid and hand ownership to the student who accepted it. */
 export function acceptSuggestion(editor: Editor, suggestionId: string, author: Author) {
 	const shapes = editor.getCurrentPageShapes().filter((s) => (s.meta?.suggestion as any)?.id === suggestionId)

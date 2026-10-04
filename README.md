@@ -29,6 +29,8 @@ Production build: `npm run build && npm start` (the server serves `client/dist` 
 | `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
 | `XAI_MODEL` | `grok-4.7` | xAI chat model with tool calling and image input. `grok-4.7` was the fastest model tested that both speaks and draws in each step |
 | `XAI_VOICE` | `ara` | Grok voice for the agent (`GET https://api.x.ai/v1/tts/voices` lists them) |
+| `XAI_REALTIME_MODEL` | `grok-voice-latest` | Speech-to-speech model for Live voice |
+| `REALTIME` | `on` | `off` hides the Live voice option |
 | `VOICE` | `grok` | `browser` forces the Web Speech API fallback even when an API key is set |
 | `XAI_BASE_URL` | `https://api.x.ai/v1` | OpenAI-compatible endpoint |
 | `PORT` | `8787` | Server port |
@@ -68,6 +70,17 @@ The server reads `.env` from the repo root on start.
   - *Interrupting:* talking over the agent cuts its voice off immediately, and your question takes over the turn.
   - *Fallback:* without an API key, the browser's Web Speech API is used instead (`client/src/agent/speech.ts`).
 
+### Live voice (beta)
+
+The **Live voice** switch in the panel uses xAI's [speech-to-speech API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) instead of the step-by-step pipeline above:
+
+- **Connection:** the browser asks the server for a short-lived client secret (`POST /api/realtime/session`, which calls `/v1/realtime/client_secrets`), then connects straight to `wss://api.x.ai/v1/realtime` using the `xai-client-secret.` subprotocol. The API key never reaches the browser.
+- **Audio:** the mic streams as 24 kHz PCM16, and Grok's voice streams back and plays immediately. xAI's server detects when you're talking, so speaking over Grok stops its playback and tells the server how much was heard (`conversation.item.truncate`).
+- **Drawing:** Grok's function calls run in that tab with the same executor, so the drawing syncs to everyone. Results go straight back, and the next turn is requested once the current audio finishes, as xAI recommends.
+- **Seeing the board:** the voice model can't take images, so its `look_at_board` tool sends a snapshot to `POST /api/describe`, where `grok-4.7` describes it.
+- **Student work:** the "ask before changing student work" rule runs in the browser for these calls (`studentWorkPrompt`).
+- **Limits:** it's one person and Grok. Others in the room see the drawing but don't hear the conversation. Grok sends its drawing calls after each spoken reply, so drawing lands at the end of a sentence rather than during it.
+
 ## Tests
 
 ```bash
@@ -76,6 +89,8 @@ npm run build && npm start &               # then, in another shell:
 npm run test:e2e                           # two browsers + mock agent, end to end
 npm run test:voice                         # live Grok: fake microphone asks a question out loud (needs XAI_API_KEY)
 npm run test:review                        # live Grok: Check my work on a hand-drawn design (needs XAI_API_KEY)
+npm run test:realtime                      # Live voice client against a local fake of xAI's realtime API
+                                           #   (server needs REALTIME_URL=ws://localhost:8790; XAI_API_KEY for look_at_board)
 ```
 
 The e2e script (`e2e/collab.mjs`) runs two students in one room. The agent draws a diagram that both see. Bob draws a box and freehand ink, presses **Check my work**, and the agent annotates his work by name. It then animates a two-pointer array walkthrough. Set `CHROMIUM_PATH` to use a preinstalled Chromium.
@@ -83,7 +98,7 @@ The e2e script (`e2e/collab.mjs`) runs two students in one room. The agent draws
 ## Status and known gaps
 
 - **Tested against live Grok** (`grok-4.7`, Grok TTS/STT): a fake microphone asked a question out loud. It took about 3.5s from the end of the question to Grok's voice starting, with the diagram drawn while it spoke. Interrupting mid-explanation worked, and Check my work correctly read hand-drawn arrows from the board image. See `e2e/voice.mjs`.
-- **Not the realtime voice API yet.** xAI also offers a streaming speech-to-speech WebSocket (`wss://api.x.ai/v1/realtime`, with browser tokens from `POST /v1/realtime/client_secrets`), which could cut latency further. It wasn't used because the development sandbox can't open WebSockets to xAI, so it couldn't be tested.
+- **Live voice has not run against xAI's real WebSocket yet.** The development sandbox can't open WebSockets to xAI. The client was built from xAI's protocol docs and schema, and tested end to end against a local fake server that follows them (`e2e/fake-realtime.mjs`). The real token endpoint and the `look_at_board` vision step were tested live.
 - **Echo cancellation depends on the browser.** The detector raises its threshold while the agent is speaking. Headphones are still the most reliable setup if the agent keeps interrupting itself.
 - **Tool execution needs a connected browser.** Exporting images and laying out shapes needs a real tldraw editor, so tool calls run in a participant's tab instead of a headless client on the server. If that tab disconnects, the next tool call moves to another connected participant.
 - **No authentication.** Anyone with a room link can join, and identities are self-declared names.
