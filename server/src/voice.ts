@@ -71,6 +71,7 @@ const PRONUNCIATIONS: Record<string, string> = {
 
 export class VoiceService {
 	private clips = new Map<string, Clip>()
+	private cached = new Map<string, Clip>()
 
 	constructor(
 		private apiKey: string,
@@ -81,7 +82,28 @@ export class VoiceService {
 
 	/** Starts synthesizing a line; returns the URL clients play it from. */
 	prepare(key: string, text: string): string {
-		const clip = new Clip(
+		const clip = this.synthesize(text)
+		this.clips.set(key, clip)
+		// Keep only recent lines.
+		if (this.clips.size > 200) this.clips.delete(this.clips.keys().next().value!)
+		return `/api/tts/${encodeURIComponent(key)}`
+	}
+
+	/** Like prepare, but synthesizes each distinct text once and reuses the audio (for fillers). */
+	prepareCached(text: string): string {
+		const key = `c-${Buffer.from(text).toString('base64url').slice(0, 100)}`
+		const existing = this.cached.get(key)
+		if (!existing || existing.failed) this.cached.set(key, this.synthesize(text))
+		return `/api/tts/${key}`
+	}
+
+	/** Synthesizes lines ahead of time so their first use plays instantly. */
+	warm(texts: string[]) {
+		for (const t of texts) this.prepareCached(t)
+	}
+
+	private synthesize(text: string): Clip {
+		return new Clip(
 			fetch(`${this.baseUrl}/tts`, {
 				method: 'POST',
 				signal: AbortSignal.timeout(30_000),
@@ -98,14 +120,10 @@ export class VoiceService {
 				}),
 			})
 		)
-		this.clips.set(key, clip)
-		// Keep only recent lines.
-		if (this.clips.size > 200) this.clips.delete(this.clips.keys().next().value!)
-		return `/api/tts/${encodeURIComponent(key)}`
 	}
 
 	serve(key: string, res: ServerResponse) {
-		const clip = this.clips.get(key)
+		const clip = this.clips.get(key) ?? this.cached.get(key)
 		if (!clip) return res.writeHead(404).end()
 		clip.pipe(res)
 	}

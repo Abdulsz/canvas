@@ -233,7 +233,9 @@ export async function startConversation(h: Handlers): Promise<Listener> {
 			belowMs = 0
 			voicedMs += FRAME
 		} else belowMs += FRAME
-		if (belowMs < 800) return
+		// ~0.65s of quiet ends the turn: short enough to feel conversational, long
+		// enough not to cut people off at a comma.
+		if (belowMs < 650) return
 
 		// End of utterance.
 		speaking = false

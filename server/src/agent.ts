@@ -8,7 +8,7 @@ import type {
 	ToolResult,
 } from '../../shared/protocol.ts'
 import { ALL_TOOLS, SERVER_TOOLS } from '../../shared/tools.ts'
-import type { ChatMessage, ContentPart, LLMProvider, ToolCall } from './llm.ts'
+import type { ChatMessage, CompletionOptions, ContentPart, LLMProvider, ToolCall } from './llm.ts'
 import { SYSTEM_PROMPT } from './prompt.ts'
 import type { ChangeEntry, Room } from './rooms.ts'
 import { stripId } from './shapes.ts'
@@ -33,6 +33,11 @@ export type AgentOptions = {
 }
 
 const MAX_HISTORY = 60
+
+// Spoken the moment a student finishes talking, while Grok thinks, so the
+// conversation never goes silent. Their audio is synthesized once and cached.
+export const ACKS = ['Sure.', 'Good question.', 'Okay, let me sketch that.', 'Mm, let me think.', "Great, let's see."]
+export const REVIEW_ACK = 'Let me take a look.'
 
 /**
  * The agent for one room. It joins the room as a participant: it listens to
@@ -224,8 +229,42 @@ export class AgentSession {
 		let speech: Promise<void> = Promise.resolve()
 		try {
 			if (!driver) throw new Error('No connected browser to draw with.')
+			// Acknowledge right away; Grok's first sentence follows it.
+			let ack: string | null = null
+			if (trigger.kind !== 'idle') {
+				ack = trigger.kind === 'check_work' ? REVIEW_ACK : ACKS[Math.floor(Math.random() * ACKS.length)]
+				speech = this.say(ack, driver, { ephemeral: true, cached: true })
+			}
+			const effort: CompletionOptions['reasoningEffort'] =
+				trigger.kind === 'message'
+					? ((process.env.XAI_REASONING_EFFORT as any) ?? 'low')
+					: ((process.env.XAI_REVIEW_REASONING_EFFORT as any) ?? 'medium')
+			// Fast spoken opener: starts answering ~1s after the question, while the
+			// drawing model (slower, it reasons) prepares the first drawing step.
+			let opener = ''
+			if (trigger.kind === 'message' && this.provider.opener) {
+				const afterAck = speech
+				const lines: Promise<void>[] = []
+				this.status('Thinking…')
+				try {
+					opener = await this.provider.opener(this.history, `${trigger.from.name}: ${trigger.text}`, abort.signal, (sentence) => {
+						const line = this.prepareLine(sentence)
+						lines.push(afterAck.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
+					})
+				} catch (err) {
+					if (!abort.signal.aborted) console.warn('[agent] opener failed:', (err as Error).message)
+				}
+				if (lines.length) speech = Promise.all(lines).then(() => undefined)
+			}
 			this.status('Looking at the board…')
-			this.pushHistory(await this.buildTriggerMessage(trigger, driver, abort.signal))
+			const triggerMessage = await this.buildTriggerMessage(trigger, driver, abort.signal)
+			const said = [ack, opener.trim()].filter(Boolean).join(' ')
+			const note = opener.trim()
+				? `(You already said this out loud: "${said}". Continue from there: draw it step by step and speak only NEW sentences; never repeat what you already said.)`
+				: `(The student just heard you say "${ack}". Now speak your first explanatory sentence while you draw; don't repeat "${ack}".)`
+			if (ack && typeof triggerMessage.content === 'string') triggerMessage.content += `\n${note}`
+			else if (ack && Array.isArray(triggerMessage.content)) triggerMessage.content.push({ type: 'text', text: note })
+			this.pushHistory(triggerMessage)
 
 			for (let step = 0; step < this.opts.maxSteps && !abort.signal.aborted; step++) {
 				this.status('Thinking…')
@@ -235,8 +274,9 @@ export class AgentSession {
 				// drawing stays in step with the voice. Within a step, the line plays while its
 				// tool calls run, and each call runs as soon as it streams in.
 				const previous = speech
-				let stepSpeech: Promise<void> | null = null
-				let tools: Promise<void> = previous
+				const lines: Promise<void>[] = []
+				// The first step draws right away, while the opener is still talking ("let me sketch it").
+				let tools: Promise<void> = step === 0 ? Promise.resolve() : previous
 				const results: { call: ToolCall; result: ToolResult }[] = []
 				let toolError: unknown = null
 				const { text, toolCalls } = await this.provider.complete(
@@ -244,13 +284,15 @@ export class AgentSession {
 					ALL_TOOLS,
 					abort.signal,
 					{
-						onText: (t) => {
-							debug(`text ready (${t.length} chars)`)
-							const spoken = t.trim()
-							if (spoken && spoken !== 'SILENT') {
-								stepSpeech = previous.then(() => (abort.signal.aborted ? undefined : this.say(spoken, driver!)))
-							}
+						// Each sentence goes to the voice as soon as it streams in; they play in order,
+						// after the previous step's speech.
+						onSentence: (sentence) => {
+							if (/^SILENT\b/.test(sentence)) return
+							debug(`sentence: ${sentence.slice(0, 40)}`)
+							const line = this.prepareLine(sentence)
+							lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 						},
+						onText: (t) => debug(`text done (${t.length} chars)`),
 						onToolCall: (call) => {
 							tools = tools.then(async () => {
 								if (abort.signal.aborted) return
@@ -262,13 +304,24 @@ export class AgentSession {
 								toolError ??= err
 							})
 						},
-					}
+					},
+					{ reasoningEffort: effort }
 				)
 				debug(`stream done: ${toolCalls.length} tool call(s)`)
+				// Safety net: if Grok drew without saying anything, narrate what appeared so the
+				// voice never goes quiet while the board changes.
+				if (!lines.length && toolCalls.length && !abort.signal.aborted) {
+					const narration = narrateDrawing(toolCalls)
+					if (narration) {
+						debug(`narrating silent step: ${narration}`)
+						const line = this.prepareLine(narration)
+						lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(narration, driver!, { line }))))
+					}
+				}
 				await tools
 				debug('tools done')
 				if (toolError) throw toolError
-				speech = stepSpeech ?? previous
+				speech = lines.length ? Promise.all(lines).then(() => undefined) : previous
 				if (abort.signal.aborted) break
 				// An empty final reply (no text, no tools) is not a valid history entry for the API.
 				if (text || toolCalls.length) {
@@ -380,11 +433,22 @@ export class AgentSession {
 
 	// --------------------------------------------------------------- speech
 
-	private say(text: string, driver: Client): Promise<void> {
+	/** Starts synthesizing a line now, so its audio is ready by the time it's due to play. */
+	private prepareLine(text: string, cached = false) {
 		const sayId = `say_${++this.callSeq}`
-		const audioUrl = this.voice?.prepare(`${this.room.id}-${sayId}`, text)
-		this.broadcast({ type: 'agent_say', sayId, text, report: false, audioUrl }, driver.ws)
-		this.send(driver.ws, { type: 'agent_say', sayId, text, report: true, audioUrl })
+		const audioUrl = cached ? this.voice?.prepareCached(text) : this.voice?.prepare(`${this.room.id}-${sayId}`, text)
+		return { sayId, audioUrl }
+	}
+
+	private say(
+		text: string,
+		driver: Client,
+		opts: { ephemeral?: boolean; cached?: boolean; line?: { sayId: string; audioUrl?: string } } = {}
+	): Promise<void> {
+		const { sayId, audioUrl } = opts.line ?? this.prepareLine(text, opts.cached)
+		const ephemeral = opts.ephemeral || undefined
+		this.broadcast({ type: 'agent_say', sayId, text, report: false, audioUrl, ephemeral }, driver.ws)
+		this.send(driver.ws, { type: 'agent_say', sayId, text, report: true, audioUrl, ephemeral })
 		// The driver reports when it finishes speaking (immediately if muted); this is only a safety net.
 		const timeoutMs = Math.min(this.opts.maxSpeechWaitMs, 3000 + text.split(/\s+/).length * 600)
 		return new Promise<void>((resolve) => {
@@ -474,6 +538,25 @@ export class AgentSession {
 			this.send(driver.ws, { type: 'tool_call', callId, name, args, ...(confirm ? { confirm } : {}) })
 		})
 	}
+}
+
+/** A short spoken line describing what a silent drawing step added ("Here's the cache and the database."). */
+export function narrateDrawing(calls: ToolCall[]): string | null {
+	const labels: string[] = []
+	for (const c of calls) {
+		let args: any
+		try {
+			args = JSON.parse(c.function.arguments || '{}')
+		} catch {
+			continue
+		}
+		if (c.function.name === 'create_shape' && typeof args.label === 'string' && args.label.trim()) labels.push(args.label.trim().split('\n')[0])
+		else if (c.function.name === 'draw_array' && Array.isArray(args.values)) labels.push('the array')
+	}
+	const unique = [...new Set(labels)].slice(0, 4)
+	if (!unique.length) return null
+	const list = unique.length === 1 ? unique[0] : `${unique.slice(0, -1).join(', ')} and ${unique.at(-1)}`
+	return `Here's ${list}.`
 }
 
 function formatToolResult(r: ToolResult): string {

@@ -28,6 +28,8 @@ Production build: `npm run build && npm start` (the server serves `client/dist` 
 | --- | --- | --- |
 | `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
 | `XAI_MODEL` | `grok-4.7` | xAI chat model with tool calling and image input. `grok-4.7` was the fastest model tested that both speaks and draws in each step |
+| `XAI_OPENER_MODEL` | `grok-4.20-non-reasoning` | Fast model that speaks the first sentence or two while the drawing model works (`off` disables) |
+| `XAI_REASONING_EFFORT` | `low` | Reasoning effort for conversational turns (`XAI_REVIEW_REASONING_EFFORT`, default `medium`, for reviews) |
 | `XAI_VOICE` | `ara` | Grok voice for the agent (`GET https://api.x.ai/v1/tts/voices` lists them) |
 | `XAI_REALTIME_MODEL` | `grok-voice-latest` | Speech-to-speech model for Live voice |
 | `REALTIME` | `on` | `off` hides the Live voice option |
@@ -66,6 +68,7 @@ The server reads `.env` from the repo root on start.
   - *Listening:* the browser records with echo cancellation and detects when you start and stop talking. Each utterance goes to Grok speech-to-text through `POST /api/stt`.
   - *Thinking and drawing:* the agent streams Grok's reply. It starts speaking as soon as the step's sentence is complete, and runs each drawing call the moment it arrives.
   - *Speaking:* the server starts Grok text-to-speech right away and streams the audio to everyone in the room from one request (`GET /api/tts/:id`).
+  - *No dead air:* the moment you finish talking, a short pre-synthesized acknowledgement plays ("Sure."). A fast non-reasoning model then speaks the first sentence or two, about 1s later, while `grok-4.7` (at low reasoning effort) prepares the drawing. It's told what was already said, so it continues without repeating. Each sentence goes to the voice as soon as it streams in.
   - *Pacing:* each step is one short spoken line plus that step's drawing. The next step waits for the line to finish, so the drawing stays in step with the voice.
   - *Interrupting:* talking over the agent cuts its voice off immediately, and your question takes over the turn.
   - *Fallback:* without an API key, the browser's Web Speech API is used instead (`client/src/agent/speech.ts`).

@@ -91,7 +91,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					setState((s) => ({ ...s, busy: msg.busy, activity: msg.activity }))
 					break
 				case 'agent_say':
-					addLog({ from: 'Professor Grok', text: msg.text, kind: 'agent' })
+					if (!msg.ephemeral) addLog({ from: 'Professor Grok', text: msg.text, kind: 'agent' })
 					speak(
 						msg.text,
 						() => {
