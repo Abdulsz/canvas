@@ -179,7 +179,7 @@ export class CanvasExecutor {
 				? { geo: ['rectangle', 'ellipse', 'diamond'].includes(args.geo) ? args.geo : 'rectangle', w, h, richText, color: c, fill: 'semi', size: 's' }
 				: type === 'note'
 					? { richText, color: args.color ? c : 'yellow', size: 's' }
-					: { richText, color: c, size: 's' }
+					: { richText, color: c, size: 's', ...(Number(args.w) > 0 ? { autoSize: false, w: Number(args.w) } : {}) }
 
 		asAgent(() => {
 			if (existing && existing.type === type) {
@@ -476,7 +476,8 @@ export class CanvasExecutor {
 		let dy = 0
 		if (boxes.length) {
 			const group = Box.Common(boxes)
-			const spot = findFreeSpot(editor, group)
+			// Avoid everything here, including the agent's own notes and highlights.
+			const spot = findFreeSpot(editor, group, { avoidAll: true })
 			dx = spot.x - group.x
 			dy = spot.y - group.y
 		}
@@ -496,7 +497,8 @@ export class CanvasExecutor {
 						id: `${suggestion.id}_label`,
 						type: 'text',
 						x: b.x,
-						y: b.y - 48,
+						y: b.maxY + 16,
+						w: Math.max(b.w, 260),
 						label: `Suggestion: ${suggestion.explanation}`,
 						color: 'violet',
 					})

@@ -4,6 +4,7 @@ import { createContext, useContext, useMemo, useState } from 'react'
 import {
 	atom,
 	createUserId,
+	DefaultStylePanel,
 	DEFAULT_THEME,
 	setUserPreferences,
 	Tldraw,
@@ -13,6 +14,7 @@ import {
 	type Editor,
 	type TLAssetStore,
 	type TLComponents,
+	type TLUiStylePanelProps,
 	type TLThemes,
 } from 'tldraw'
 import { AGENT_NAME } from '../../shared/protocol.ts'
@@ -74,7 +76,18 @@ function AgentCursor() {
 	)
 }
 
-const components: TLComponents = { InFrontOfTheCanvas: AgentCursor }
+// Only show tldraw's style panel when it applies, so it doesn't cover the lesson.
+function ContextualStylePanel(props: TLUiStylePanelProps) {
+	const editor = useEditor()
+	const show = useValue(
+		'show style panel',
+		() => editor.getSelectedShapeIds().length > 0 || !['select', 'hand', 'eraser', 'laser', 'zoom'].includes(editor.getCurrentToolId()),
+		[editor]
+	)
+	return show ? <DefaultStylePanel {...props} /> : null
+}
+
+const components: TLComponents = { InFrontOfTheCanvas: AgentCursor, StylePanel: ContextualStylePanel }
 // Bundle fonts/icons/translations instead of loading them from tldraw's CDN.
 const assetUrls = getAssetUrlsByImport()
 // Monochrome selection to match the app's black/white accent.

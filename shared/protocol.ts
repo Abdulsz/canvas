@@ -32,6 +32,8 @@ export type ServerMessage =
 			busy: boolean
 			participants: Participant[]
 			provider: string
+			/** 'grok': Grok speech in/out through the server. 'browser': Web Speech API fallback. */
+			voice: 'grok' | 'browser'
 	  }
 	| {
 			type: 'tool_call'
@@ -42,7 +44,7 @@ export type ServerMessage =
 			confirm?: { message: string }
 	  }
 	/** `report`: this client should send speech_done when it finishes speaking the line. */
-	| { type: 'agent_say'; sayId: string; text: string; report: boolean }
+	| { type: 'agent_say'; sayId: string; text: string; report: boolean; audioUrl?: string }
 	| { type: 'agent_status'; busy: boolean; activity: string }
 	| { type: 'agent_cursor'; x: number; y: number }
 	| { type: 'chat'; from: string; text: string }

@@ -3,7 +3,7 @@ import type { Editor } from 'tldraw'
 import type { ClientMessage, Participant, ReviewMode, ServerMessage } from '../../../shared/protocol.ts'
 import type { Identity } from '../identity.ts'
 import { CanvasExecutor } from './executor.ts'
-import { speak, stopSpeaking } from './speech.ts'
+import { onAudioBlocked, onSpeakingChange, speak, stopSpeaking } from './speech.ts'
 
 export type LogEntry = { id: number; from: string; text: string; kind: 'agent' | 'user' | 'error' }
 
@@ -14,6 +14,8 @@ export type AgentState = {
 	speaking: boolean
 	activity: string
 	provider: string
+	voice: 'grok' | 'browser'
+	audioBlocked: boolean
 	participants: Participant[]
 	log: LogEntry[]
 	agentCursor: { x: number; y: number } | null
@@ -31,6 +33,8 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 		speaking: false,
 		activity: '',
 		provider: '',
+		voice: 'browser',
+		audioBlocked: false,
 		participants: [],
 		log: [],
 		agentCursor: null,
@@ -79,18 +83,20 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 		const onMessage = async (msg: ServerMessage) => {
 			switch (msg.type) {
 				case 'room_state':
-					setState((s) => ({ ...s, mode: msg.mode, busy: msg.busy, participants: msg.participants, provider: msg.provider }))
+					setState((s) => ({ ...s, mode: msg.mode, busy: msg.busy, participants: msg.participants, provider: msg.provider, voice: msg.voice }))
 					break
 				case 'agent_status':
 					setState((s) => ({ ...s, busy: msg.busy, activity: msg.activity }))
 					break
 				case 'agent_say':
 					addLog({ from: 'Professor Grok', text: msg.text, kind: 'agent' })
-					setState((s) => ({ ...s, speaking: true }))
-					speak(msg.text, () => {
-						setState((s) => ({ ...s, speaking: false }))
-						if (msg.report) send({ type: 'speech_done', sayId: msg.sayId })
-					})
+					speak(
+						msg.text,
+						() => {
+							if (msg.report) send({ type: 'speech_done', sayId: msg.sayId })
+						},
+						msg.audioUrl
+					)
 					break
 				case 'chat':
 					addLog({ from: msg.from, text: msg.text, kind: 'user' })
@@ -103,7 +109,6 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					break
 				case 'stop_speech':
 					stopSpeaking()
-					setState((s) => ({ ...s, speaking: false }))
 					break
 				case 'focus':
 					void executor.run('focus_view', { shapeIds: msg.shapeIds, zoomLevel: msg.zoomLevel })
@@ -119,6 +124,9 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 				}
 			}
 		}
+
+		const offSpeaking = onSpeakingChange((speaking) => setState((s) => ({ ...s, speaking })))
+		onAudioBlocked((audioBlocked) => setState((s) => ({ ...s, audioBlocked })))
 
 		const connect = () => {
 			const proto = location.protocol === 'https:' ? 'wss' : 'ws'
@@ -141,6 +149,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 		connect()
 		return () => {
 			closed = true
+			offSpeaking()
 			clearTimeout(retry)
 			wsRef.current?.close()
 		}

@@ -1,5 +1,5 @@
 import type { ToolDef } from '../../shared/tools.ts'
-import type { ChatMessage, Completion, LLMProvider, ToolCall } from './llm.ts'
+import { StreamAssembler, type ChatMessage, type Completion, type LLMProvider, type StreamHandlers, type ToolCall } from './llm.ts'
 
 // A scripted stand-in for Grok, used when no XAI_API_KEY is set (local
 // development, demos, and end-to-end tests). It exercises the same tool
@@ -21,7 +21,16 @@ function textOf(m: ChatMessage): string {
 export class MockProvider implements LLMProvider {
 	readonly name = 'mock'
 
-	async complete(messages: ChatMessage[], _tools: ToolDef[], _signal: AbortSignal): Promise<Completion> {
+	async complete(messages: ChatMessage[], _tools: ToolDef[], _signal: AbortSignal, handlers?: StreamHandlers): Promise<Completion> {
+		// Replay the scripted reply through the same assembler the real provider uses.
+		const { text, toolCalls } = this.script(messages)
+		const assembler = new StreamAssembler(handlers)
+		if (text) assembler.push({ content: text })
+		toolCalls.forEach((c, index) => assembler.push({ tool_calls: [{ index, id: c.id, function: c.function }] }))
+		return assembler.finish()
+	}
+
+	private script(messages: ChatMessage[]): Completion {
 		// Find the message that started this turn and how many steps we've taken since.
 		let start = messages.length - 1
 		while (start >= 0 && !(messages[start].role === 'user' && textOf(messages[start]).startsWith('[trigger:'))) start--

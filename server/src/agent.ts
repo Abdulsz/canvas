@@ -12,6 +12,7 @@ import type { ChatMessage, ContentPart, LLMProvider, ToolCall } from './llm.ts'
 import { SYSTEM_PROMPT } from './prompt.ts'
 import type { ChangeEntry, Room } from './rooms.ts'
 import { stripId } from './shapes.ts'
+import type { VoiceService } from './voice.ts'
 
 type Client = Participant & { ws: WebSocket }
 
@@ -55,7 +56,8 @@ export class AgentSession {
 	constructor(
 		private room: Room,
 		private provider: LLMProvider,
-		opts: AgentOptions = {}
+		opts: AgentOptions = {},
+		private voice: VoiceService | null = null
 	) {
 		this.opts = {
 			maxSteps: 12,
@@ -155,6 +157,7 @@ export class AgentSession {
 			busy: this.busy,
 			participants: [...this.clients.values()].map(({ userId, name, color }) => ({ userId, name, color })),
 			provider: this.provider.name,
+			voice: this.voice ? 'grok' : 'browser',
 		})
 	}
 
@@ -222,30 +225,56 @@ export class AgentSession {
 
 			for (let step = 0; step < this.opts.maxSteps && !abort.signal.aborted; step++) {
 				this.status('Thinking…')
+				const stepStart = Date.now()
+				const debug = (msg: string) => process.env.AGENT_DEBUG && console.log(`[agent] step ${step} +${Date.now() - stepStart}ms ${msg}`)
+				// The previous step's line must finish before this step speaks or draws, so the
+				// drawing stays in step with the voice. Within a step, the line plays while its
+				// tool calls run, and each call runs as soon as it streams in.
+				const previous = speech
+				let stepSpeech: Promise<void> | null = null
+				let tools: Promise<void> = previous
+				const results: { call: ToolCall; result: ToolResult }[] = []
+				let toolError: unknown = null
 				const { text, toolCalls } = await this.provider.complete(
 					[{ role: 'system', content: SYSTEM_PROMPT }, ...this.history],
 					ALL_TOOLS,
-					abort.signal
+					abort.signal,
+					{
+						onText: (t) => {
+							debug(`text ready (${t.length} chars)`)
+							const spoken = t.trim()
+							if (spoken && spoken !== 'SILENT') {
+								stepSpeech = previous.then(() => (abort.signal.aborted ? undefined : this.say(spoken, driver!)))
+							}
+						},
+						onToolCall: (call) => {
+							tools = tools.then(async () => {
+								if (abort.signal.aborted) return
+								driver = this.pickDriver(driver)
+								if (!driver) throw new Error('No connected browser to draw with.')
+								this.status(`Running ${call.function.name}…`)
+								results.push({ call, result: await this.executeTool(call, driver) })
+							}).catch((err) => {
+								toolError ??= err
+							})
+						},
+					}
 				)
+				debug(`stream done: ${toolCalls.length} tool call(s)`)
+				await tools
+				debug('tools done')
+				if (toolError) throw toolError
+				speech = stepSpeech ?? previous
+				if (abort.signal.aborted) break
 				// An empty final reply (no text, no tools) is not a valid history entry for the API.
 				if (text || toolCalls.length) {
 					this.pushHistory({ role: 'assistant', content: text ?? '', ...(toolCalls.length ? { tool_calls: toolCalls } : {}) })
 				}
-
-				// Let the previous line finish so drawing stays in step with the voice.
-				await speech
-				if (abort.signal.aborted) break
-				const spoken = text?.trim()
-				if (spoken && spoken !== 'SILENT') speech = this.say(spoken, driver)
 				if (!toolCalls.length) break
 
 				const images: ContentPart[] = []
 				for (const call of toolCalls) {
-					if (abort.signal.aborted) break
-					driver = this.pickDriver(driver)
-					if (!driver) throw new Error('No connected browser to draw with.')
-					this.status(`Running ${call.function.name}…`)
-					const result = await this.executeTool(call, driver)
+					const result = results.find((r) => r.call.id === call.id)?.result ?? { ok: false, error: 'Not run.' }
 					this.pushHistory({ role: 'tool', tool_call_id: call.id, content: formatToolResult(result) })
 					if (result.image) images.push({ type: 'image_url', image_url: { url: result.image, detail: 'high' } })
 				}
@@ -294,7 +323,7 @@ export class AgentSession {
 			t.kind === 'check_work'
 				? `[trigger:check_work] ${header}\n${t.from.name} pressed "Check my work"${
 						t.shapeIds.length ? ' with a selection (review only those shapes)' : ''
-					}. Review their drawing and give feedback by voice and on the board.`
+					}. Review their drawing and give feedback by voice AND on the board: point at the specific shapes you are talking about with highlight_shapes and/or add_comment (and suggest_correction for a concrete fix).`
 				: `[trigger:idle] ${header}\nStudents paused after editing the board. Decide whether to comment (proactive mode).`
 		parts.push({
 			type: 'text',
@@ -349,8 +378,9 @@ export class AgentSession {
 
 	private say(text: string, driver: Client): Promise<void> {
 		const sayId = `say_${++this.callSeq}`
-		this.broadcast({ type: 'agent_say', sayId, text, report: false }, driver.ws)
-		this.send(driver.ws, { type: 'agent_say', sayId, text, report: true })
+		const audioUrl = this.voice?.prepare(`${this.room.id}-${sayId}`, text)
+		this.broadcast({ type: 'agent_say', sayId, text, report: false, audioUrl }, driver.ws)
+		this.send(driver.ws, { type: 'agent_say', sayId, text, report: true, audioUrl })
 		// The driver reports when it finishes speaking (immediately if muted); this is only a safety net.
 		const timeoutMs = Math.min(this.opts.maxSpeechWaitMs, 3000 + text.split(/\s+/).length * 600)
 		return new Promise<void>((resolve) => {
@@ -382,6 +412,7 @@ export class AgentSession {
 		}
 
 		const confirm = this.guard(name, args)
+		if (process.env.AGENT_DEBUG) console.log(`[agent] ${name} ${JSON.stringify(args).slice(0, 300)}${confirm ? ' (needs confirmation)' : ''}`)
 		const result = await this.callClient(driver, name, args, this.abort?.signal, confirm)
 		if (name === 'focus_view' && result.ok && args.scope === 'everyone') {
 			this.broadcast({ type: 'focus', shapeIds: args.shapeIds ?? [], zoomLevel: args.zoomLevel }, driver.ws)

@@ -27,7 +27,9 @@ Production build: `npm run build && npm start` (the server serves `client/dist` 
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
-| `XAI_MODEL` | `grok-4` | Any xAI chat model with tool calling and image input |
+| `XAI_MODEL` | `grok-4.7` | xAI chat model with tool calling and image input. `grok-4.7` was the fastest model tested that both speaks and draws in each step |
+| `XAI_VOICE` | `ara` | Grok voice for the agent (`GET https://api.x.ai/v1/tts/voices` lists them) |
+| `VOICE` | `grok` | `browser` forces the Web Speech API fallback even when an API key is set |
 | `XAI_BASE_URL` | `https://api.x.ai/v1` | OpenAI-compatible endpoint |
 | `PORT` | `8787` | Server port |
 | `DATA_DIR` | `server/data` | Room databases (SQLite) and uploaded images |
@@ -58,7 +60,13 @@ The server reads `.env` from the repo root on start.
 - **Seeing the board.** `get_canvas_state` returns shapes, labels, arrow connections and authors. `get_canvas_image` returns a PNG (`editor.toImage`) that is sent to Grok as an image input. `get_recent_changes` is served from the server's change log. For **Check my work** and proactive reviews, the server gathers this context up front. It always includes an image when the student drew freehand ink.
 - **Review modes.** *On request* (button or voice), *Proactive* (runs after students pause for `IDLE_MS`) and *Exercise* (the agent sets a task, then grades it).
 - **Respecting student work.** `AgentSession.guard` checks every tool call against the server's copy of the shapes. Any call that would change or erase a student-authored shape needs a student to click **Allow** first. Annotations (`highlight_shapes`, `add_comment`, `suggest_correction`) never touch student shapes. Students can **Accept** or **Dismiss** suggested corrections from the panel.
-- **Voice.** Each agent step is one short spoken line plus that step's drawing. The server waits for the line to finish before running the next step's tools, so the drawing stays in step with the voice. Voice uses the browser's Web Speech API (`client/src/agent/speech.ts`): speech synthesis for the agent and speech recognition for students. Talking over the agent interrupts it.
+- **Voice conversation.** Tap the mic once and just talk; the mic stays open (hands-free).
+  - *Listening:* the browser records with echo cancellation and detects when you start and stop talking. Each utterance goes to Grok speech-to-text through `POST /api/stt`.
+  - *Thinking and drawing:* the agent streams Grok's reply. It starts speaking as soon as the step's sentence is complete, and runs each drawing call the moment it arrives.
+  - *Speaking:* the server starts Grok text-to-speech right away and streams the audio to everyone in the room from one request (`GET /api/tts/:id`).
+  - *Pacing:* each step is one short spoken line plus that step's drawing. The next step waits for the line to finish, so the drawing stays in step with the voice.
+  - *Interrupting:* talking over the agent cuts its voice off immediately, and your question takes over the turn.
+  - *Fallback:* without an API key, the browser's Web Speech API is used instead (`client/src/agent/speech.ts`).
 
 ## Tests
 
@@ -66,13 +74,16 @@ The server reads `.env` from the repo root on start.
 npm test                                   # server unit tests (guard, review pipeline, routing, change log)
 npm run build && npm start &               # then, in another shell:
 npm run test:e2e                           # two browsers + mock agent, end to end
+npm run test:voice                         # live Grok: fake microphone asks a question out loud (needs XAI_API_KEY)
+npm run test:review                        # live Grok: Check my work on a hand-drawn design (needs XAI_API_KEY)
 ```
 
 The e2e script (`e2e/collab.mjs`) runs two students in one room. The agent draws a diagram that both see. Bob draws a box and freehand ink, presses **Check my work**, and the agent annotates his work by name. It then animates a two-pointer array walkthrough. Set `CHROMIUM_PATH` to use a preinstalled Chromium.
 
 ## Status and known gaps
 
-- **Grok voice.** Voice I/O currently uses the browser's Web Speech API (best in Chrome/Edge), not xAI's streaming voice API. It sits behind `speak` / `startListening` in `speech.ts`, so a Grok voice client can replace it without other changes.
-- **Not yet run against the live xAI API.** The Grok client uses the standard chat-completions request with `tools`. It has been checked against the mock provider only. Model output may need prompt tuning.
+- **Tested against live Grok** (`grok-4.7`, Grok TTS/STT): a fake microphone asked a question out loud. It took about 3.5s from the end of the question to Grok's voice starting, with the diagram drawn while it spoke. Interrupting mid-explanation worked, and Check my work correctly read hand-drawn arrows from the board image. See `e2e/voice.mjs`.
+- **Not the realtime voice API yet.** xAI also offers a streaming speech-to-speech WebSocket (`wss://api.x.ai/v1/realtime`, with browser tokens from `POST /v1/realtime/client_secrets`), which could cut latency further. It wasn't used because the development sandbox can't open WebSockets to xAI, so it couldn't be tested.
+- **Echo cancellation depends on the browser.** The detector raises its threshold while the agent is speaking. Headphones are still the most reliable setup if the agent keeps interrupting itself.
 - **Tool execution needs a connected browser.** Exporting images and laying out shapes needs a real tldraw editor, so tool calls run in a participant's tab instead of a headless client on the server. If that tab disconnects, the next tool call moves to another connected participant.
 - **No authentication.** Anyone with a room link can join, and identities are self-declared names.

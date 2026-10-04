@@ -1,0 +1,110 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+
+/**
+ * One spoken line. Synthesis starts as soon as the agent decides what to say,
+ * and the audio is fanned out to every listener in the room from a single
+ * xAI request, streaming to late joiners from what has arrived so far.
+ */
+class Clip {
+	chunks: Buffer[] = []
+	done = false
+	failed = false
+	private listeners = new Set<() => void>()
+
+	constructor(promise: Promise<Response>) {
+		void this.pump(promise)
+	}
+
+	private async pump(promise: Promise<Response>) {
+		try {
+			const res = await promise
+			if (!res.ok || !res.body) throw new Error(`TTS ${res.status}: ${(await res.text()).slice(0, 200)}`)
+			for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+				this.chunks.push(Buffer.from(chunk))
+				this.notify()
+			}
+		} catch (err) {
+			console.error('[voice] synthesis failed:', (err as Error).message)
+			this.failed = true
+		}
+		this.done = true
+		this.notify()
+	}
+
+	private notify() {
+		for (const l of this.listeners) l()
+	}
+
+	pipe(res: ServerResponse) {
+		let sent = 0
+		const flush = () => {
+			if (this.failed && sent === 0) {
+				cleanup()
+				if (!res.headersSent) res.writeHead(502)
+				return res.end()
+			}
+			if (!res.headersSent) res.writeHead(200, { 'content-type': 'audio/mpeg', 'cache-control': 'no-store' })
+			while (sent < this.chunks.length) res.write(this.chunks[sent++])
+			if (this.done) {
+				cleanup()
+				res.end()
+			}
+		}
+		const cleanup = () => this.listeners.delete(flush)
+		res.on('close', cleanup)
+		this.listeners.add(flush)
+		if (this.chunks.length || this.done) flush()
+	}
+}
+
+export class VoiceService {
+	private clips = new Map<string, Clip>()
+
+	constructor(
+		private apiKey: string,
+		private baseUrl = 'https://api.x.ai/v1',
+		readonly voiceId = 'ara',
+		private language = 'en'
+	) {}
+
+	/** Starts synthesizing a line; returns the URL clients play it from. */
+	prepare(key: string, text: string): string {
+		const clip = new Clip(
+			fetch(`${this.baseUrl}/tts`, {
+				method: 'POST',
+				signal: AbortSignal.timeout(30_000),
+				headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
+				body: JSON.stringify({ text, voice_id: this.voiceId, language: this.language }),
+			})
+		)
+		this.clips.set(key, clip)
+		// Keep only recent lines.
+		if (this.clips.size > 200) this.clips.delete(this.clips.keys().next().value!)
+		return `/api/tts/${encodeURIComponent(key)}`
+	}
+
+	serve(key: string, res: ServerResponse) {
+		const clip = this.clips.get(key)
+		if (!clip) return res.writeHead(404).end()
+		clip.pipe(res)
+	}
+
+	/** Proxies a recorded utterance (multipart form with a `file` field) to xAI speech-to-text. */
+	async transcribe(req: IncomingMessage, res: ServerResponse) {
+		const chunks: Buffer[] = []
+		let size = 0
+		for await (const chunk of req) {
+			size += chunk.length
+			if (size > 15 * 1024 * 1024) return res.writeHead(413).end()
+			chunks.push(chunk)
+		}
+		const upstream = await fetch(`${this.baseUrl}/stt`, {
+			method: 'POST',
+			signal: AbortSignal.timeout(30_000),
+			headers: { 'content-type': req.headers['content-type'] ?? 'application/octet-stream', authorization: `Bearer ${this.apiKey}` },
+			body: Buffer.concat(chunks),
+		})
+		const body = await upstream.text()
+		res.writeHead(upstream.status, { 'content-type': 'application/json' }).end(body)
+	}
+}

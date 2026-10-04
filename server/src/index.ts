@@ -8,6 +8,7 @@ import { AgentSession } from './agent.ts'
 import { GrokProvider, type LLMProvider } from './llm.ts'
 import { MockProvider } from './mock.ts'
 import { RoomManager } from './rooms.ts'
+import { VoiceService } from './voice.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT ?? 8787)
@@ -21,8 +22,13 @@ function createProvider(): LLMProvider {
 		console.warn('[server] XAI_API_KEY not set: using the scripted mock agent.')
 		return new MockProvider()
 	}
-	return new GrokProvider(key, process.env.XAI_MODEL ?? 'grok-4', process.env.XAI_BASE_URL)
+	return new GrokProvider(key, process.env.XAI_MODEL ?? 'grok-4.7', process.env.XAI_BASE_URL)
 }
+
+const voice =
+	process.env.XAI_API_KEY && process.env.VOICE !== 'browser'
+		? new VoiceService(process.env.XAI_API_KEY, process.env.XAI_BASE_URL, process.env.XAI_VOICE ?? 'ara')
+		: null
 
 const provider = createProvider()
 const rooms = new RoomManager(process.env.PERSIST === 'false' ? null : join(DATA_DIR, 'rooms'))
@@ -32,9 +38,7 @@ mkdirSync(UPLOADS_DIR, { recursive: true })
 function agentFor(roomId: string) {
 	let agent = agents.get(roomId)
 	if (!agent) {
-		agent = new AgentSession(rooms.get(roomId), provider, {
-			idleMs: Number(process.env.IDLE_MS ?? 4000),
-		})
+		agent = new AgentSession(rooms.get(roomId), provider, { idleMs: Number(process.env.IDLE_MS ?? 4000) }, voice)
 		agents.set(roomId, agent)
 	}
 	return agent
@@ -73,8 +77,21 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse) {
 		return createReadStream(file).pipe(res)
 	}
 
+	// Grok voice: synthesized lines out, recorded utterances in.
+	const tts = url.pathname.match(/^\/api\/tts\/([a-zA-Z0-9_-]{1,140})$/)
+	if (tts && req.method === 'GET') {
+		if (!voice) return res.writeHead(404).end()
+		return voice.serve(tts[1], res)
+	}
+	if (url.pathname === '/api/stt' && req.method === 'POST') {
+		if (!voice) return res.writeHead(404).end()
+		return voice.transcribe(req, res)
+	}
+
 	if (url.pathname === '/api/health') {
-		return res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({ ok: true, provider: provider.name }))
+		return res
+			.writeHead(200, { 'content-type': 'application/json' })
+			.end(JSON.stringify({ ok: true, provider: provider.name, voice: voice ? `grok:${voice.voiceId}` : 'browser' }))
 	}
 
 	// Serve the built client in production.
@@ -116,5 +133,5 @@ server.on('upgrade', (req, socket, head) => {
 })
 
 server.listen(PORT, () => {
-	console.log(`[server] listening on http://localhost:${PORT} (agent: ${provider.name})`)
+	console.log(`[server] listening on http://localhost:${PORT} (agent: ${provider.name}, voice: ${voice ? `grok:${voice.voiceId}` : 'browser'})`)
 })

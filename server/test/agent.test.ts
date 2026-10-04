@@ -130,3 +130,22 @@ test('change log reports student edits grouped by student, collapsing drags', ()
 	assert.deepEqual(changes.byUser.Ann, [{ op: 'created', shape: { id: 'a', type: 'geo', label: 'API', x: 50, y: 0 } }])
 	assert.equal((agent as any).takeRecentChanges().total, 0, 'reading the log advances the cursor')
 })
+
+test('stream assembler: speaks before tools, emits each tool call once it is complete', async () => {
+	const { StreamAssembler } = await import('../src/llm.ts')
+	const events: string[] = []
+	const a = new StreamAssembler({ onText: (t) => events.push(`text:${t}`), onToolCall: (c) => events.push(`tool:${c.function.name}:${c.function.arguments}`) })
+	a.push({ content: 'Here is ' })
+	a.push({ content: 'a box.' })
+	// OpenAI-style: one call split across deltas.
+	a.push({ tool_calls: [{ index: 0, id: 'c1', function: { name: 'create_shape', arguments: '{"id":' } }] })
+	assert.deepEqual(events, [])
+	a.push({ tool_calls: [{ index: 0, function: { arguments: '"a"}' } }] })
+	assert.deepEqual(events, ['text:Here is a box.', 'tool:create_shape:{"id":"a"}'])
+	// xAI-style: a whole call in one delta.
+	a.push({ tool_calls: [{ index: 1, id: 'c2', function: { name: 'create_arrow', arguments: '{"id":"x"}' } }] })
+	const done = a.finish()
+	assert.equal(events.length, 3)
+	assert.deepEqual(done.toolCalls.map((c) => c.id), ['c1', 'c2'])
+	assert.equal(done.text, 'Here is a box.')
+})
