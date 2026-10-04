@@ -131,8 +131,19 @@ export const speechRecognitionSupported = () =>
 
 export const micSupported = () => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'
 
+// Bias transcription toward the vocabulary of a technical lesson.
+const KEYTERMS = [
+	'load balancer', 'Redis', 'Kafka', 'PostgreSQL', 'Postgres', 'MySQL', 'MongoDB', 'DynamoDB', 'Cassandra', 'gRPC', 'REST',
+	'GraphQL', 'Kubernetes', 'nginx', 'CDN', 'sharding', 'replication', 'idempotent', 'LeetCode', 'two pointers',
+	'binary search', 'hash map', 'linked list', 'BFS', 'DFS', 'dynamic programming', 'Big O', 'API gateway', 'microservices',
+]
+
 async function transcribe(blob: Blob): Promise<string> {
 	const form = new FormData()
+	// Option fields must come before the file in the multipart body.
+	form.append('model', 'grok-voice-transcribe-2.0')
+	form.append('language', 'en')
+	for (const term of KEYTERMS) form.append('keyterm', term)
 	const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm'
 	form.append('file', blob, `utterance.${ext}`)
 	const res = await fetch('/api/stt', { method: 'POST', body: form })

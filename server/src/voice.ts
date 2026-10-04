@@ -57,6 +57,18 @@ class Clip {
 	}
 }
 
+// How the agent should say common technical terms (respellings, applied before synthesis only).
+const PRONUNCIATIONS: Record<string, string> = {
+	gRPC: 'G R P C',
+	nginx: 'engine x',
+	PostgreSQL: 'post gres Q L',
+	k8s: 'kubernetes',
+	OAuth: 'oh auth',
+	SQLite: 'S Q lite',
+	DynamoDB: 'dynamo D B',
+	'LeetCode': 'leet code',
+}
+
 export class VoiceService {
 	private clips = new Map<string, Clip>()
 
@@ -74,7 +86,16 @@ export class VoiceService {
 				method: 'POST',
 				signal: AbortSignal.timeout(30_000),
 				headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
-				body: JSON.stringify({ text, voice_id: this.voiceId, language: this.language }),
+				body: JSON.stringify({
+					text,
+					voice_id: this.voiceId,
+					language: this.language,
+					// Smaller first chunk: audio starts ~0.15s after the request instead of ~0.5s.
+					optimize_streaming_latency: 1,
+					// Read "O(n log n)", "HTTP/2" and numbers the way a person would.
+					text_normalization: true,
+					replace: PRONUNCIATIONS,
+				}),
 			})
 		)
 		this.clips.set(key, clip)
