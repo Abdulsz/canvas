@@ -15,6 +15,7 @@ export type AgentState = {
 	activity: string
 	provider: string
 	voice: 'grok' | 'browser'
+	realtime: boolean
 	audioBlocked: boolean
 	participants: Participant[]
 	log: LogEntry[]
@@ -34,6 +35,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 		activity: '',
 		provider: '',
 		voice: 'browser',
+		realtime: false,
 		audioBlocked: false,
 		participants: [],
 		log: [],
@@ -83,7 +85,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 		const onMessage = async (msg: ServerMessage) => {
 			switch (msg.type) {
 				case 'room_state':
-					setState((s) => ({ ...s, mode: msg.mode, busy: msg.busy, participants: msg.participants, provider: msg.provider, voice: msg.voice }))
+					setState((s) => ({ ...s, mode: msg.mode, busy: msg.busy, participants: msg.participants, provider: msg.provider, voice: msg.voice, realtime: !!msg.realtime }))
 					break
 				case 'agent_status':
 					setState((s) => ({ ...s, busy: msg.busy, activity: msg.activity }))
@@ -163,6 +165,13 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 			stopSpeaking()
 			send({ type: 'stop' })
 		},
+		// Used by live voice mode, which talks to xAI directly from this tab.
+		log: (from: string, text: string, kind: LogEntry['kind']) => addLog({ from, text, kind }),
+		agentCursor: (x: number, y: number) => {
+			setState((s) => ({ ...s, agentCursor: { x, y } }))
+			send({ type: 'agent_cursor', x, y })
+		},
+		confirm,
 	}
 	return { state, actions }
 }

@@ -34,6 +34,8 @@ export type ServerMessage =
 			provider: string
 			/** 'grok': Grok speech in/out through the server. 'browser': Web Speech API fallback. */
 			voice: 'grok' | 'browser'
+			/** Live voice (xAI speech-to-speech in the browser) is available. */
+			realtime: boolean
 	  }
 	| {
 			type: 'tool_call'

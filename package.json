@@ -13,7 +13,8 @@
     "test": "npm run test -w server",
     "test:e2e": "node e2e/collab.mjs",
     "test:voice": "node e2e/voice.mjs",
-    "test:review": "node e2e/review.mjs"
+    "test:review": "node e2e/review.mjs",
+    "test:realtime": "node e2e/realtime.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.4",

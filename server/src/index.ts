@@ -8,6 +8,7 @@ import { AgentSession } from './agent.ts'
 import { GrokProvider, type LLMProvider } from './llm.ts'
 import { MockProvider } from './mock.ts'
 import { RoomManager } from './rooms.ts'
+import { createRealtimeSession, describeBoard, type RealtimeConfig } from './realtime.ts'
 import { VoiceService } from './voice.ts'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -25,6 +26,18 @@ function createProvider(): LLMProvider {
 	return new GrokProvider(key, process.env.XAI_MODEL ?? 'grok-4.7', process.env.XAI_BASE_URL)
 }
 
+const realtime: RealtimeConfig | null =
+	process.env.XAI_API_KEY && process.env.REALTIME !== 'off'
+		? {
+				apiKey: process.env.XAI_API_KEY,
+				baseUrl: process.env.XAI_BASE_URL ?? 'https://api.x.ai/v1',
+				model: process.env.XAI_REALTIME_MODEL ?? 'grok-voice-latest',
+				voice: process.env.XAI_VOICE ?? 'ara',
+				visionModel: process.env.XAI_MODEL ?? 'grok-4.7',
+				urlOverride: process.env.REALTIME_URL,
+			}
+		: null
+
 const voice =
 	process.env.XAI_API_KEY && process.env.VOICE !== 'browser'
 		? new VoiceService(process.env.XAI_API_KEY, process.env.XAI_BASE_URL, process.env.XAI_VOICE ?? 'ara')
@@ -38,7 +51,7 @@ mkdirSync(UPLOADS_DIR, { recursive: true })
 function agentFor(roomId: string) {
 	let agent = agents.get(roomId)
 	if (!agent) {
-		agent = new AgentSession(rooms.get(roomId), provider, { idleMs: Number(process.env.IDLE_MS ?? 4000) }, voice)
+		agent = new AgentSession(rooms.get(roomId), provider, { idleMs: Number(process.env.IDLE_MS ?? 4000), realtime: !!realtime }, voice)
 		agents.set(roomId, agent)
 	}
 	return agent
@@ -88,10 +101,20 @@ async function handleHttp(req: IncomingMessage, res: ServerResponse) {
 		return voice.transcribe(req, res)
 	}
 
+	// Live voice: mint a short-lived client secret; describe board snapshots for the voice model.
+	if (url.pathname === '/api/realtime/session' && req.method === 'POST') {
+		if (!realtime) return res.writeHead(404).end()
+		return createRealtimeSession(realtime, res)
+	}
+	if (url.pathname === '/api/describe' && req.method === 'POST') {
+		if (!realtime) return res.writeHead(404).end()
+		return describeBoard(realtime, req, res)
+	}
+
 	if (url.pathname === '/api/health') {
 		return res
 			.writeHead(200, { 'content-type': 'application/json' })
-			.end(JSON.stringify({ ok: true, provider: provider.name, voice: voice ? `grok:${voice.voiceId}` : 'browser' }))
+			.end(JSON.stringify({ ok: true, provider: provider.name, voice: voice ? `grok:${voice.voiceId}` : 'browser', realtime: !!realtime }))
 	}
 
 	// Serve the built client in production.

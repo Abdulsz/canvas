@@ -28,6 +28,8 @@ export type AgentOptions = {
 	confirmTimeoutMs?: number
 	/** Upper bound on waiting for a client to finish speaking a line. */
 	maxSpeechWaitMs?: number
+	/** Whether clients may start live (speech-to-speech) voice sessions. */
+	realtime?: boolean
 }
 
 const MAX_HISTORY = 60
@@ -65,6 +67,7 @@ export class AgentSession {
 			toolTimeoutMs: 30_000,
 			confirmTimeoutMs: 90_000,
 			maxSpeechWaitMs: 20_000,
+			realtime: false,
 			...opts,
 		}
 		room.onChanges((entries) => this.onBoardChanged(entries))
@@ -158,6 +161,7 @@ export class AgentSession {
 			participants: [...this.clients.values()].map(({ userId, name, color }) => ({ userId, name, color })),
 			provider: this.provider.name,
 			voice: this.voice ? 'grok' : 'browser',
+			realtime: this.opts.realtime,
 		})
 	}
 

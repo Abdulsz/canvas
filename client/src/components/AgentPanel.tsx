@@ -15,6 +15,7 @@ import {
 	type Listener,
 } from '../agent/speech.ts'
 import type { AgentState, LogEntry, useAgent } from '../agent/useAgent.ts'
+import { useLiveVoice } from '../agent/useLiveVoice.ts'
 import type { Identity } from '../identity.ts'
 import { CheckIcon, LinkIcon, MicIcon, SendIcon, SparkleIcon, SpeakerIcon, StopIcon } from './icons.tsx'
 
@@ -114,8 +115,23 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 	const [muted, setMutedState] = useState(false)
 	const [copied, setCopied] = useState(false)
 	const [micError, setMicError] = useState<string | null>(null)
+	const [liveMode, setLiveModeState] = useState(() => {
+		try {
+			return localStorage.getItem('grok-whiteboard:live') === '1'
+		} catch {
+			return false
+		}
+	})
+	const setLiveMode = (on: boolean) => {
+		setLiveModeState(on)
+		try {
+			localStorage.setItem('grok-whiteboard:live', on ? '1' : '0')
+		} catch {}
+	}
+	const live = useLiveVoice(editor, me, actions)
+	const useLive = liveMode && state.realtime
 	const recRef = useRef<Listener | null>(null)
-	const listening = listenState !== null
+	const listening = listenState !== null || live.active
 	const logRef = useRef<HTMLDivElement>(null)
 	const suggestions = useSuggestions(editor)
 
@@ -134,6 +150,9 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 
 	// Hands-free conversation: the mic stays open; each utterance is transcribed and sent.
 	const toggleMic = async () => {
+		// Live voice: set up synchronously inside the click (browser audio rules).
+		if (live.active) return live.stop()
+		if (useLive && !listenState) return live.start()
 		if (listening) return stopListening()
 		unlockAudio()
 		const handlers = {
@@ -162,12 +181,31 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 	const submit = (e: React.FormEvent) => {
 		e.preventDefault()
 		if (!text.trim()) return
-		actions.say(text)
+		if (live.active) live.sendText(text)
+		else actions.say(text)
 		setText('')
 	}
 
-	const orbState = !state.connected ? 'offline' : state.speaking ? 'speaking' : state.busy ? 'thinking' : 'idle'
-	const status = !state.connected ? 'Connecting…' : state.activity || (state.speaking ? 'Speaking…' : state.busy ? 'Working…' : 'Ready')
+	const LIVE_STATUS = { connecting: 'Live · Connecting…', listening: 'Live · Listening', hearing: 'Live · Hearing you…', thinking: 'Live · Thinking…', speaking: 'Live · Speaking…' }
+	const orbState = live.state
+		? live.state === 'speaking'
+			? 'speaking'
+			: live.state === 'thinking' || live.state === 'connecting'
+				? 'thinking'
+				: 'idle'
+		: !state.connected
+			? 'offline'
+			: state.speaking
+				? 'speaking'
+				: state.busy
+					? 'thinking'
+					: 'idle'
+	const status = live.state
+		? LIVE_STATUS[live.state]
+		: !state.connected
+			? 'Connecting…'
+			: state.activity || (state.speaking ? 'Speaking…' : state.busy ? 'Working…' : 'Ready')
+	const micLevel = live.active ? live.level : level
 	const others = state.participants.filter((p) => p.userId !== me.userId)
 	const modeIndex = MODES.findIndex((m) => m.id === state.mode)
 
@@ -279,7 +317,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 				<div className="flex gap-2">
 					<button
 						className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[15px] font-semibold text-[var(--on-accent)] shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_rgba(0,0,0,0.18)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
-						onClick={actions.checkWork}
+						onClick={live.active ? live.checkWork : actions.checkWork}
 						disabled={!state.connected}
 						title="Ask Grok to review your drawing (only the selected shapes, if any)"
 					>
@@ -297,6 +335,32 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 						</button>
 					)}
 				</div>
+				{state.realtime && (
+					<label className="flex cursor-pointer items-center justify-between gap-3 px-0.5">
+						<span className="min-w-0">
+							<span className="block text-[13px] font-medium text-[var(--label)]">
+								Live voice <span className="ml-1 rounded-full bg-[var(--fill)] px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--label-2)]">Beta</span>
+							</span>
+							<span className="block text-[12px] text-[var(--label-3)]">Grok's speech-to-speech model: faster replies, just you and Grok</span>
+						</span>
+						<button
+							type="button"
+							role="switch"
+							aria-checked={liveMode}
+							aria-label="Live voice"
+							onClick={() => {
+								if (live.active) live.stop()
+								if (listenState) stopListening()
+								setLiveMode(!liveMode)
+							}}
+							className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors ${liveMode ? 'bg-[var(--green)]' : 'bg-[var(--fill)]'}`}
+						>
+							<span
+								className={`absolute left-0 top-[2px] h-[22px] w-[22px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-transform ${liveMode ? 'translate-x-[20px]' : 'translate-x-[2px]'}`}
+							/>
+						</button>
+					</label>
+				)}
 			</div>
 
 			{/* Suggestions awaiting a decision */}
@@ -369,7 +433,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 					</div>
 				)}
 				{listenState === 'transcribing' && <div className="fade-up text-right text-[13px] italic text-[var(--label-3)]">Transcribing…</div>}
-				{micError && <div className="fade-up text-center text-[12px] text-[var(--red)]">{micError}</div>}
+				{(micError || live.error) && <div className="fade-up text-center text-[12px] text-[var(--red)]">{live.error ?? micError}</div>}
 			</div>
 
 			{/* Composer */}
@@ -388,7 +452,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 						{listening && (
 							<span
 								className="absolute inset-0 rounded-full bg-[var(--red)] opacity-30 transition-transform duration-75"
-								style={{ transform: `scale(${1 + level * 0.9})` }}
+								style={{ transform: `scale(${1 + micLevel * 0.9})` }}
 								data-testid="mic-level"
 							/>
 						)}
@@ -399,7 +463,7 @@ export function AgentPanel({ roomId, me, editor, state, actions }: Props) {
 					<input
 						className="min-w-0 flex-1 bg-transparent text-[15px] text-[var(--label)] outline-none focus-visible:outline-none placeholder:text-[var(--label-3)]"
 						placeholder={
-							listenState === 'hearing' ? 'Hearing you…' : listenState === 'transcribing' ? 'Transcribing…' : listening ? 'Listening — just talk' : 'Ask Professor Grok'
+							live.active ? 'Live — just talk, or type' : listenState === 'hearing' ? 'Hearing you…' : listenState === 'transcribing' ? 'Transcribing…' : listening ? 'Listening — just talk' : 'Ask Professor Grok'
 						}
 						value={text}
 						onChange={(e) => setText(e.target.value)}
