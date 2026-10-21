@@ -550,7 +550,9 @@ export function narrateDrawing(calls: ToolCall[]): string | null {
 		} catch {
 			continue
 		}
-		if (c.function.name === 'create_shape' && typeof args.label === 'string' && args.label.trim()) labels.push(args.label.trim().split('\n')[0])
+		// Name boxes only; notes and text are sentences, not names, and Grok usually says them anyway.
+		const label = typeof args.label === 'string' ? args.label.trim() : ''
+		if (c.function.name === 'create_shape' && args.type !== 'note' && args.type !== 'text' && label && label.length <= 30 && !/[:\n.]/.test(label)) labels.push(label)
 		else if (c.function.name === 'draw_array' && Array.isArray(args.values)) labels.push('the array')
 	}
 	const unique = [...new Set(labels)].slice(0, 4)
