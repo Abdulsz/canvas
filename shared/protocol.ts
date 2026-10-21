@@ -46,7 +46,8 @@ export type ServerMessage =
 			confirm?: { message: string }
 	  }
 	/** `report`: this client should send speech_done when it finishes speaking the line. */
-	| { type: 'agent_say'; sayId: string; text: string; report: boolean; audioUrl?: string }
+	/** `ephemeral`: a spoken filler ("Sure.") that isn't added to the conversation log. */
+	| { type: 'agent_say'; sayId: string; text: string; report: boolean; audioUrl?: string; ephemeral?: boolean }
 	| { type: 'agent_status'; busy: boolean; activity: string }
 	| { type: 'agent_cursor'; x: number; y: number }
 	| { type: 'chat'; from: string; text: string }

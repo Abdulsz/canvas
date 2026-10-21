@@ -149,3 +149,13 @@ test('stream assembler: speaks before tools, emits each tool call once it is com
 	assert.deepEqual(done.toolCalls.map((c) => c.id), ['c1', 'c2'])
 	assert.equal(done.text, 'Here is a box.')
 })
+
+test('silent drawing steps get a short narration from what was drawn', async () => {
+	const { narrateDrawing } = await import('../src/agent.ts')
+	const call = (name: string, args: object) => ({ id: name, type: 'function' as const, function: { name, arguments: JSON.stringify(args) } })
+	assert.equal(narrateDrawing([call('create_shape', { label: 'Cache' }), call('create_arrow', {}), call('create_shape', { label: 'Database' })]), "Here's Cache and Database.")
+	assert.equal(narrateDrawing([call('create_arrow', {}), call('highlight_shapes', {})]), null)
+	assert.equal(narrateDrawing([call('draw_array', { values: ['1'] })]), "Here's the array.")
+	assert.equal(narrateDrawing([call('create_shape', { type: 'note', label: 'Pick rule: round robin' }), call('create_shape', { type: 'geo', label: 'Server 1' })]), "Here's Server 1.")
+	assert.equal(narrateDrawing([call('create_shape', { type: 'geo', label: 'Retries: exponential backoff with jitter' })]), null)
+})
