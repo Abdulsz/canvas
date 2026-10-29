@@ -63,6 +63,8 @@ export class AgentSession {
 	private turnAudit: AuditIssue[] | null = null
 	/** Steering questions asked in earlier turns, so the next one is new. */
 	private askedQuestions: string[] = []
+	/** The request that started the current turn (to keep "everything" edits on every screen). */
+	private turnRequest = ''
 	private opts: Required<AgentOptions>
 
 	constructor(
@@ -258,6 +260,7 @@ export class AgentSession {
 			// the opener said nothing) and one steering question. Critiques get two lines
 			// (praise, then the top issue). Measurable claims a critique can't back up, and
 			// visual details nobody asked for, are never spoken.
+			this.turnRequest = trigger.kind === 'message' ? trigger.text : ''
 			const review = trigger.kind !== 'message' || isCritiqueRequest(trigger.text)
 			const statusCap = review ? 2 : 1
 			let statusCount = 0
@@ -267,7 +270,7 @@ export class AgentSession {
 			const request = trigger.kind === 'message' ? trigger.text : ''
 			const admit = (sentence: string, source: 'opener' | 'designer' | 'narration'): boolean => {
 				if (/\?["')\]]*$/.test(sentence.trim())) {
-					if (source === 'opener' || askedThisTurn || this.askedQuestions.some((q) => similar(sentence, q))) return false
+					if (source === 'opener' || askedThisTurn || this.askedQuestions.some((q) => sameQuestion(sentence, q))) return false
 					askedThisTurn = true
 					this.askedQuestions = [...this.askedQuestions, sentence].slice(-8)
 					return true
@@ -293,6 +296,12 @@ export class AgentSession {
 					})
 					.then((text) => {
 						opener = text
+						// The opener said nothing usable (its sentence described visuals, or it failed):
+						// a plain status line so the turn still says what is happening.
+						if (!text && !abort.signal.aborted && admit(fallbackStatus(trigger.text, this.hasScreens()), 'opener')) {
+							const line = fallbackStatus(trigger.text, this.hasScreens())
+							openerLines.push(afterAck.then(() => (abort.signal.aborted ? undefined : this.say(line, driver!, { line: this.prepareLine(line) }))))
+						}
 					})
 					.catch((err) => {
 						if (!abort.signal.aborted) console.warn('[agent] opener failed:', (err as Error).message)
@@ -312,7 +321,7 @@ export class AgentSession {
 			const note = model
 				? `(A spoken status line about this request is already playing. Make the tool calls first, with no status sentence of your own. Then end with ONE short question about something specific you just changed or could change next.)`
 				: this.provider.opener && trigger.kind === 'message' && !isCritiqueRequest(trigger.text)
-				? `(A spoken status line about this request is already playing ("${ack} ..."). Don't speak another status sentence and don't describe the design: build it, then end with ONE short question about a specific element you just built.)`
+				? `(A spoken status line about this request is already playing ("${ack} ..."). Your text is only ONE short question about a specific element you are building; no status sentence, no description. Do all the building with tool calls (create_screen, add_nodes, focus_view), never as JSON in your text.)`
 				: `(The user just heard you say "${ack}". Now speak your first short sentence while you work; don't repeat "${ack}".)`
 			if (ack && typeof triggerMessage.content === 'string') triggerMessage.content += `\n${note}`
 			else if (ack && Array.isArray(triggerMessage.content)) triggerMessage.content.push({ type: 'text', text: note })
@@ -362,7 +371,7 @@ export class AgentSession {
 							const due = /\?["')\]]*$/.test(sentence.trim()) ? Promise.all([previous, stepToolsDone]) : previous
 							lines.push(due.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 						},
-						onText: (t) => debug(`text done (${t.length} chars)`),
+						onText: (t) => debug(`text done (${t.length} chars)${t.length > 200 ? `: ${t.slice(0, 400)}` : ''}`),
 						onToolCall: (call) => {
 							tools = tools.then(async () => {
 								if (abort.signal.aborted) return
@@ -397,6 +406,15 @@ export class AgentSession {
 				// An empty final reply (no text, no tools) is not a valid history entry for the API.
 				if (text || toolCalls.length) {
 					this.pushHistory({ role: 'assistant', content: text ?? '', ...(toolCalls.length ? { tool_calls: toolCalls } : {}) })
+				}
+				// The model sometimes writes a create_screen spec as JSON text instead of calling the tool:
+				// nothing was built, so ask once for the real calls.
+				const leaked = !!text && text.length > 300 && /\{\s*"(id|parentId|nodes|children)"\s*:/.test(text) && !toolCalls.some((c) => c.function.name === 'create_screen' || c.function.name === 'add_nodes')
+				if (leaked && !nudged && trigger.kind === 'message') {
+					nudged = true
+					if (toolCalls.length) for (const call of toolCalls) this.pushHistory({ role: 'tool', tool_call_id: call.id, content: formatToolResult(results.find((r) => r.call.id === call.id)?.result ?? { ok: false, error: 'Not run.' }) })
+					this.pushHistory({ role: 'user', content: '(Your reply put the design as JSON in its text, so nothing was built. Make those changes now as real tool calls (create_screen, add_nodes, focus_view), without speaking again.)' })
+					continue
 				}
 				if (!toolCalls.length) {
 					// A design request answered with words only (it happens at low reasoning effort):
@@ -596,6 +614,10 @@ export class AgentSession {
 			return { ok: true, data: this.takeRecentChanges(Number.isNaN(since) ? undefined : since) }
 		}
 
+		// "Switch everything to dark mode": the theme goes on every screen, even if the model named one.
+		if (name === 'set_theme' && args.screenId && args.screenId !== 'all' && /\b(everything|every screen|all( the| of the)? screens|all of (it|them)|whole (app|canvas|file|flow)|across the board)\b/i.test(this.turnRequest)) {
+			args = { ...args, screenId: 'all' }
+		}
 		const confirm = this.guard(name, args)
 		if (process.env.AGENT_DEBUG) console.log(`[agent] ${name} (${call.function.arguments.length} chars) ${JSON.stringify(args).slice(0, 300)}${confirm ? ' (needs confirmation)' : ''}`)
 		const result = await this.callClient(driver, name, args, this.abort?.signal, confirm)
@@ -699,6 +721,27 @@ export function isNewScreenRequest(text: string, hasScreens: boolean): boolean {
 	const t = text.toLowerCase()
 	if (/\b(redo|rebuild|redesign|rethink|replace|from scratch|update|change|tweak)\b/.test(t)) return false
 	return /\b(design|build|create|make|add|sketch|draw|generate|mock ?up|wireframe)\b/.test(t) && /\b(screens?|pages?|dashboards?|landing|onboarding|apps?|website|site|views?|checkout|profile|settings|log ?in|sign ?up|home ?screen)\b/.test(t)
+}
+
+/** A plain status line for a turn whose opener said nothing ("Okay, working on the dashboard."). */
+export function fallbackStatus(text: string, hasScreens: boolean): string {
+	if (!isNewScreenRequest(text, hasScreens)) return 'On it.'
+	const { kind } = classifyScreenRequest(text)
+	const noun = kind === 'list' ? 'new screen' : kind === 'dashboard' ? 'dashboard' : kind === 'landing' ? 'landing page' : `${kind === 'login' ? 'log-in' : kind} screen`
+	return `Okay, working on the ${noun} now.`
+}
+
+const QUESTION_STOP = new Set(['want', 'should', 'would', 'like', 'more', 'less', 'with', 'under', 'above', 'below', 'next', 'instead', 'keep', 'make', 'that', 'this', 'there', 'them', 'they', 'from', 'into', 'your', 'have', 'just', 'also', 'stay', 'every', 'each'])
+
+/** True when two steering questions ask about the same thing (content words mostly shared). */
+export function sameQuestion(a: string, b: string): boolean {
+	const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 3 && !QUESTION_STOP.has(w)))
+	const x = words(a)
+	const y = words(b)
+	if (!x.size || !y.size) return false
+	let shared = 0
+	for (const w of x) if (y.has(w)) shared++
+	return shared / Math.min(x.size, y.size) >= 0.75
 }
 
 /** "What do you think?", "critique the dashboard", "any feedback?" */

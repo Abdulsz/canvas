@@ -144,3 +144,23 @@ test('new-screen requests are classified for the instant skeleton', async () => 
 	assert.equal(isNewScreenRequest('switch everything to dark mode', true), false)
 	assert.equal(isNewScreenRequest('what do you think of the dashboard?', true), false)
 })
+
+test('a steering question is only dropped when it repeats an earlier one', async () => {
+	const { sameQuestion, fallbackStatus } = await import('../src/agent.ts')
+	assert.equal(sameQuestion('Want a log out button under the privacy section?', 'Want the pager dots under the headline, or above the Continue button?'), false)
+	assert.equal(sameQuestion('Want the holdings table on the right of the chart?', 'Want a holdings table beside the cash-flow chart?'), true)
+	assert.equal(fallbackStatus('Build a fintech dashboard for desktop', true), 'Okay, working on the dashboard now.')
+	assert.equal(fallbackStatus('switch everything to dark mode', true), 'On it.')
+})
+
+test('template children can be conditional, and a missing whole-value icon disappears', () => {
+	const spec = expandTemplates({
+		id: 'rows',
+		type: 'frame',
+		template: { id: 'r', type: 'frame', layout: 'horizontal', children: [{ id: 'r_l', type: 'text', text: '{label}' }, { id: 'r_t', type: 'toggle', if: 'on' } as any, { id: 'r_i', type: 'icon', icon: '{trail}' }] },
+		items: [{ label: 'Daily reminder', on: true }, { label: 'Delete account', trail: 'chevron-right' }],
+	})
+	assert.deepEqual(spec.children![0].children!.map((c) => c.type), ['text', 'toggle'])
+	assert.deepEqual(spec.children![1].children!.map((c) => c.type), ['text', 'icon'])
+	assert.equal('if' in spec.children![0].children![1], false)
+})

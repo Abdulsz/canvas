@@ -377,6 +377,42 @@ export class CanvasExecutor {
 		return out
 	}
 
+	/**
+	 * Tables whose header and rows don't share column positions (cells that hug
+	 * their text instead of fixed widths). Returns the container ids.
+	 */
+	private _misalignedTables(root: UiShape): string[] {
+		const editor = this.editor
+		const out: string[] = []
+		const isRow = (k: UiShape) => k.props.kind === 'frame' && this._meta(k).layout?.mode === 'horizontal' && this._children(k).length >= 3
+		const walk = (s: UiShape) => {
+			const kids = this._children(s)
+			if (isContainerKind(s.props.kind) && kids.length) {
+				// Rows directly inside, or one level down (a header row + a frame of template rows).
+				const rows = [...kids.filter(isRow), ...kids.filter((k) => k.props.kind === 'frame' && !isRow(k)).flatMap((k) => this._children(k).filter(isRow))]
+				const byCount = new Map<number, UiShape[]>()
+				for (const r of rows) byCount.set(this._children(r).length, [...(byCount.get(this._children(r).length) ?? []), r])
+				for (const group of byCount.values()) {
+					// A table: one of the rows is a header (text cells only).
+					if (group.length < 3 || !group.some((r) => this._children(r).every((c) => c.props.kind === 'text'))) continue
+					const cols = group.map((r) => this._children(r).map((c) => editor.getShapePageBounds(c.id)!).map((b) => [b.x, b.maxX]))
+					const n = cols[0].length
+					let bad = false
+					for (let i = 1; i < n && !bad; i++) {
+						const lefts = cols.map((c) => c[i][0])
+						const rights = cols.map((c) => c[i][1])
+						// A column lines up when its cells share a left edge or a right edge (right-aligned amounts).
+						if (Math.max(...lefts) - Math.min(...lefts) > 4 && Math.max(...rights) - Math.min(...rights) > 4) bad = true
+					}
+					if (bad) out.push(bare(s.id))
+				}
+			}
+			kids.forEach(walk)
+		}
+		walk(root)
+		return [...new Set(out)]
+	}
+
 	/** Warnings about content that doesn't fit, so the model can fix it. */
 	private _warnings(stale: UiShape): string[] {
 		const warnings: string[] = []
@@ -399,6 +435,7 @@ export class CanvasExecutor {
 			kids.forEach(walk)
 		}
 		walk(root)
+		for (const t of this._misalignedTables(root)) warnings.push(`The columns of "${t}" don't line up between the header and the rows: give each column's cells the same fixed width in the header and the row template (one column width 'fill'), right-align amounts.`)
 		return warnings.slice(0, 8)
 	}
 
@@ -455,6 +492,10 @@ export class CanvasExecutor {
 			kids.forEach(walk)
 		}
 		walk(screen)
+		// A phone screen that grew past its device height scrolls: whatever is below the fold is a real finding.
+		const device = Object.values(DEVICES).find((d) => d.w === screen.props.w)
+		if (phone && device && screen.props.h > device.h + 1) issues.push({ id: sid, screen: sid, kind: 'overflow', detail: `"${sid}" is ${Math.round(screen.props.h)}px tall, past the ${device.h}px phone: the bottom of it is below the fold` })
+		for (const t of this._misalignedTables(screen)) issues.push({ id: t, screen: sid, kind: 'spacing', detail: `the columns of "${t}" are misaligned between header and rows` })
 		return issues.slice(0, 20)
 	}
 
@@ -737,8 +778,14 @@ export class CanvasExecutor {
 		}
 	}
 
-	update_node(args: Args) {
+	update_node(args: Args): Args {
 		const editor = this.editor
+		// A template's id ("d_stat") means every row it produced ("d_stat_1", "d_stat_2"...).
+		if (!editor.getShape(toId(args.id))) {
+			const prefix = `${cleanId(args.id)}_`
+			const copies = editor.getCurrentPageShapes().filter((s) => isUi(s) && bare(s.id).startsWith(prefix) && /^\d+$/.test(bare(s.id).slice(prefix.length)))
+			if (copies.length) return { updated: copies.map((c): Args => this.update_node({ ...args, id: bare(c.id) })) }
+		}
 		const shape = this._requireUi(args.id)
 		let props: UiProps = { ...shape.props }
 		let meta: UiMeta = this._meta(shape)

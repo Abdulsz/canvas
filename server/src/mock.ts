@@ -224,7 +224,7 @@ function dashboardScreen(): Spec {
 								frame('dash_chart_titles', [txt('dash_chart_title', 'Revenue', { fontSize: 16, fontWeight: 600 }), muted('dash_chart_sub', 'Weekly, last 12 weeks', { fontSize: 13 })], { gap: 2, width: 'fill' }),
 								chip('dash_chart_range', 'Last 12 weeks', { fill: '$surfaceAlt', textColor: '$text' }),
 							], { width: 'fill' }),
-							{ id: 'dash_chart_plot', type: 'chart', chart: 'bar', height: 260, data: [8.2, 9.6, 8.9, 11.4, 10.6, 12.8, 12.1, 14.2, 11.8, 13.5, 15.9, 14.6], labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12'], prefix: '$', suffix: 'k' },
+							{ id: 'dash_chart_plot', type: 'chart', chart: 'bar', height: 'fill', data: [8.2, 9.6, 8.9, 11.4, 10.6, 12.8, 12.1, 14.2, 11.8, 13.5, 15.9, 14.6], labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12'], prefix: '$', suffix: 'k' },
 						], { gap: 16, padding: [20, 24, 20, 24] }), dashTopProducts()], { width: 'fill', gap: 24, alignItems: 'stretch' }),
 					],
 					{ width: 'fill', gap: 24, alignItems: 'stretch' }

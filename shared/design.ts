@@ -814,6 +814,12 @@ export function applySpec(props: UiProps, meta: UiMeta, spec: Partial<UiNodeSpec
 		if (j) l.justify = j
 		m.layout = l
 	}
+	// A switch is a switch: never stretched into a slider.
+	if (p.kind === 'toggle') {
+		m.sizing = { w: 'fixed', h: 'fixed' }
+		p.w = Math.min(56, Math.max(40, p.w))
+		p.h = Math.min(32, Math.max(24, p.h))
+	}
 	return { props: p, meta: m }
 }
 
@@ -876,10 +882,30 @@ export function expandTemplates(spec: UiNodeSpec): UiNodeSpec {
 	return children ? { ...rest, children: children.map((c) => expandTemplates(c)) } : rest
 }
 
+const has = (vars: Record<string, unknown>, key: string) => vars[key] !== undefined && vars[key] !== null && vars[key] !== false && vars[key] !== ''
+
+/**
+ * Whether a template node appears for this item: `if: 'key'` (or '{key}') keeps it only
+ * when the item has that key, and an icon/text whose whole content is a missing "{key}"
+ * is left out instead of falling back to a placeholder (a stray star icon, an empty label).
+ */
+function keepNode(node: UiNodeSpec, vars: Record<string, unknown>): boolean {
+	const cond = (node as Record<string, unknown>).if
+	if (typeof cond === 'string' && !has(vars, cond.replace(/^\{|\}$/g, ''))) return false
+	const whole = (v: unknown) => (typeof v === 'string' ? /^\{(\w+)\}$/.exec(v)?.[1] : undefined)
+	const t = normalizeKind(node.type)
+	const iconKey = whole(node.icon)
+	if (t === 'icon' && iconKey && !has(vars, iconKey)) return false
+	const textKey = whole(node.text)
+	if ((t === 'text' || t === 'badge') && textKey && !has(vars, textKey)) return false
+	return true
+}
+
 function fillTemplate(node: UiNodeSpec, vars: Record<string, unknown>, n: number): UiNodeSpec {
 	const out: Record<string, unknown> = {}
 	for (const [k, v] of Object.entries(node)) {
-		if (k === 'children' && Array.isArray(v)) out.children = v.map((c) => fillTemplate(c, vars, n))
+		if (k === 'if') continue
+		if (k === 'children' && Array.isArray(v)) out.children = v.filter((c) => c && typeof c === 'object' && keepNode(c, vars)).map((c) => fillTemplate(c, vars, n))
 		else if (k === 'id') out.id = `${String(v)}_${n}`
 		else if (typeof v === 'string' && v.includes('{')) {
 			const whole = /^\{(\w+)\}$/.exec(v)
@@ -1103,7 +1129,7 @@ export type AuditIssue = { id: string; screen: string; kind: AuditKind; detail: 
  * problem (the model otherwise misreads geometry: "the table drops below the frame").
  */
 const CLAIMS: [AuditKind[], RegExp][] = [
-	[['overflow', 'clipped'], /\b(overflow\w*|clipp\w*|cut[s]? off|cut-off|truncat\w*|drops? (below|off|out)|spill\w*|outside (of )?(the |its )?(frame|screen|card|artboard)|off[- ]screen|past the (frame|screen|edge|bottom)|beyond the (frame|screen|edge)|overlap\w*|runs? (off|past|out of))\b/i],
+	[['overflow', 'clipped'], /\b(overflow\w*|clipp\w*|cut[s]? off|cut-off|truncat\w*|drops? (below|off|out)|spill\w*|outside (of )?(the |its )?(frame|screen|card|artboard)|off[- ]screen|past the (frame|screen|edge|bottom)|beyond the (frame|screen|edge)|overlap\w*|runs? (off|past|out of)|below the fold|past the (phone|device|fold))\b/i],
 	[['contrast'], /\b((low|poor|weak|insufficient|not enough|lacks?|lacking|more|better|higher|stronger) contrast|contrast (is |feels |looks )?(low|weak|poor|too)|hard to read|low legibility|illegible|washed[- ]out|barely visible|hard to see)\b/i],
 	[['touch'], /\b(tap targets?|touch targets?|hit (area|targets?)|too small to (tap|hit|press)|small to tap|hard to tap|(under|below|less than) 44|44 ?(px|pt|points|pixels))\b/i],
 	[['small_text'], /\b(tiny (text|type|labels?)|(text|type|font|labels?) (is |are )?too small|small text|(under|smaller than|below) 1[0-3] ?(px|pixels))\b/i],
