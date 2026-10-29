@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "adapter": "vite",
+  "studioPath": "/",
+  "devUrl": "http://127.0.0.1:5173",
+  "files": {
+    ".clipmunk/.gitignore": "4df5054725df76fe4d8b4086203a0fa4ad818cdca2f0b3f53d4c0752bc3b2441",
+    "CLIPMUNK.md": "94a02891f9d8f397e03697a0c803f6e527edd95d675bf9c1a6822e1afe558bd6",
+    "src/clipmunk/Studio.tsx": "5d55b94df91aef3a891b332fcb71e9b13d8d468069bd3f5dbf30257bb99d7a3f"
+  },
+  "entry": "src/main.tsx"
+}
