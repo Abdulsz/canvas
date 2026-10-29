@@ -8,6 +8,7 @@ import type {
 	ToolResult,
 } from '../../shared/protocol.ts'
 import { ALL_TOOLS, SERVER_TOOLS } from '../../shared/tools.ts'
+import { classifyScreenRequest, unsupportedClaim, type AuditIssue } from '../../shared/design.ts'
 import type { ChatMessage, CompletionOptions, ContentPart, LLMProvider, ToolCall } from './llm.ts'
 import { SYSTEM_PROMPT } from './prompt.ts'
 import type { ChangeEntry, Room } from './rooms.ts'
@@ -58,6 +59,10 @@ export class AgentSession {
 	private lastEditorId: string | null = null
 	private idleTimer: NodeJS.Timeout | null = null
 	private callSeq = 0
+	/** Measured problems on the canvas for the current critique turn (null outside critiques). */
+	private turnAudit: AuditIssue[] | null = null
+	/** Steering questions asked in earlier turns, so the next one is new. */
+	private askedQuestions: string[] = []
 	private opts: Required<AgentOptions>
 
 	constructor(
@@ -227,6 +232,7 @@ export class AgentSession {
 		this.broadcastState()
 		let driver = this.pickDriver(trigger.from)
 		let speech: Promise<void> = Promise.resolve()
+		let skeletonPlaced = false
 		try {
 			if (!driver) throw new Error('No connected browser to design with.')
 			// Acknowledge right away; Grok's first sentence follows it.
@@ -248,6 +254,32 @@ export class AgentSession {
 			// anything); the drawing model's lines play after it.
 			let opener = ''
 			let nudged = false
+			// What gets said in a turn: one status line (the opener's, or the designer's when
+			// the opener said nothing) and one steering question. Critiques get two lines
+			// (praise, then the top issue). Measurable claims a critique can't back up, and
+			// visual details nobody asked for, are never spoken.
+			const review = trigger.kind !== 'message' || isCritiqueRequest(trigger.text)
+			const statusCap = review ? 2 : 1
+			let statusCount = 0
+			// A failed or declined change earns one more line ("Okay, I left that as it is").
+			let extraStatus = 0
+			let askedThisTurn = false
+			const request = trigger.kind === 'message' ? trigger.text : ''
+			const admit = (sentence: string, source: 'opener' | 'designer' | 'narration'): boolean => {
+				if (/\?["')\]]*$/.test(sentence.trim())) {
+					if (source === 'opener' || askedThisTurn || this.askedQuestions.some((q) => similar(sentence, q))) return false
+					askedThisTurn = true
+					this.askedQuestions = [...this.askedQuestions, sentence].slice(-8)
+					return true
+				}
+				// "Let me check the canvas first" is filler: the acknowledgement already covered it.
+				if (/^(one moment|just a (moment|sec)|let me (see|check|look|read)|checking|looking at)\b/i.test(sentence.trim())) return false
+				if (statusCount >= statusCap + extraStatus) return false
+				if (this.turnAudit && unsupportedClaim(sentence, this.turnAudit)) return false
+				if (source === 'designer' && !review && namesUnaskedColor(sentence, request)) return false
+				statusCount++
+				return true
+			}
 			const openerLines: Promise<void>[] = []
 			let openerDone: Promise<void> = Promise.resolve()
 			if (trigger.kind === 'message' && this.provider.opener) {
@@ -255,6 +287,7 @@ export class AgentSession {
 				this.status('Thinking…')
 				openerDone = this.provider
 					.opener(this.history, `${trigger.from.name}: ${trigger.text}`, abort.signal, (sentence) => {
+						if (!admit(sentence, 'opener')) return
 						const line = this.prepareLine(sentence)
 						openerLines.push(afterAck.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 					})
@@ -267,13 +300,20 @@ export class AgentSession {
 				const ackDone = speech
 				speech = openerDone.then(() => (openerLines.length ? Promise.all(openerLines).then(() => undefined) : ackDone))
 			}
+			// A new screen: put a skeleton of it on the canvas right away (well under a second),
+			// while the designer model writes the real one; its first create_screen replaces it.
+			let skeleton: Promise<unknown> = Promise.resolve()
+			if (trigger.kind === 'message' && !model && this.provider.name.startsWith('xai:') && isNewScreenRequest(trigger.text, this.hasScreens())) {
+				skeletonPlaced = true
+				skeleton = this.callClient(driver, 'create_skeleton', classifyScreenRequest(trigger.text), abort.signal)
+			}
 			this.status('Looking at the board…')
 			const triggerMessage = await this.buildTriggerMessage(trigger, driver, abort.signal)
 			const note = model
-				? `(A quick acknowledgement of the request is already playing. Make the tool calls first. Then say at most one short sentence naming what changed and where (which screen, or all screens), without numbers or pixel values, and end with one question.)`
-				: this.provider.opener && trigger.kind === 'message'
-				? `(A quick acknowledgement of the request is already playing ("${ack} ..."). Don't acknowledge, greet or restate the request; your first sentence names a specific design choice.)`
-				: `(The user just heard you say "${ack}". Now speak your first short sentence while you design; don't repeat "${ack}".)`
+				? `(A spoken status line about this request is already playing. Make the tool calls first, with no status sentence of your own. Then end with ONE short question about something specific you just changed or could change next.)`
+				: this.provider.opener && trigger.kind === 'message' && !isCritiqueRequest(trigger.text)
+				? `(A spoken status line about this request is already playing ("${ack} ..."). Don't speak another status sentence and don't describe the design: build it, then end with ONE short question about a specific element you just built.)`
+				: `(The user just heard you say "${ack}". Now speak your first short sentence while you work; don't repeat "${ack}".)`
 			if (ack && typeof triggerMessage.content === 'string') triggerMessage.content += `\n${note}`
 			else if (ack && Array.isArray(triggerMessage.content)) triggerMessage.content.push({ type: 'text', text: note })
 			this.pushHistory(triggerMessage)
@@ -288,10 +328,14 @@ export class AgentSession {
 				const previous = speech
 				const lines: Promise<void>[] = []
 				// The first step draws right away, while the opener is still talking ("let me sketch it").
-				let tools: Promise<void> = step === 0 ? Promise.resolve() : previous
+				let tools: Promise<void> = step === 0 ? skeleton.then(() => undefined) : previous
 				const results: { call: ToolCall; result: ToolResult }[] = []
 				let toolError: unknown = null
 				let firstSentence = true
+				// The step's question plays once its tool calls have run, so it never asks about
+				// something that isn't on the canvas yet.
+				let toolsRan!: () => void
+				const stepToolsDone = new Promise<void>((r) => (toolsRan = r))
 				const { text, toolCalls } = await this.provider.complete(
 					[{ role: 'system', content: SYSTEM_PROMPT }, ...this.history],
 					ALL_TOOLS,
@@ -308,10 +352,15 @@ export class AgentSession {
 								return
 							}
 							firstSentence = false
-							debug(`sentence: ${sentence.slice(0, 40)}`)
 							sentence = honestSpeech(sentence)
+							if (!admit(sentence, 'designer')) {
+								debug(`not spoken (over the line budget or unbacked): ${sentence.slice(0, 60)}`)
+								return
+							}
+							debug(`sentence: ${sentence.slice(0, 40)}`)
 							const line = this.prepareLine(sentence)
-							lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
+							const due = /\?["')\]]*$/.test(sentence.trim()) ? Promise.all([previous, stepToolsDone]) : previous
+							lines.push(due.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 						},
 						onText: (t) => debug(`text done (${t.length} chars)`),
 						onToolCall: (call) => {
@@ -333,13 +382,14 @@ export class AgentSession {
 				// voice never goes quiet while the board changes.
 				if (!lines.length && toolCalls.length && !abort.signal.aborted) {
 					const narration = narrateDrawing(toolCalls)
-					if (narration) {
+					if (narration && admit(narration, 'narration')) {
 						debug(`narrating silent step: ${narration}`)
 						const line = this.prepareLine(narration)
 						lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(narration, driver!, { line }))))
 					}
 				}
 				await tools
+				toolsRan()
 				debug('tools done')
 				if (toolError) throw toolError
 				speech = lines.length ? Promise.all(lines).then(() => undefined) : previous
@@ -364,6 +414,7 @@ export class AgentSession {
 				for (const call of toolCalls) {
 					const result = results.find((r) => r.call.id === call.id)?.result ?? { ok: false, error: 'Not run.' }
 					this.pushHistory({ role: 'tool', tool_call_id: call.id, content: formatToolResult(result) })
+					if (!result.ok && call.function.name !== 'add_comment') extraStatus = 1
 					if (result.image) images.push({ type: 'image_url', image_url: { url: result.image, detail: 'high' } })
 					if (!result.ok || (result.data as any)?.warnings?.length || READING_TOOLS.has(call.function.name)) clean = false
 				}
@@ -393,6 +444,10 @@ export class AgentSession {
 				this.broadcast({ type: 'error', message: err?.message ?? String(err) })
 			}
 		} finally {
+			// A skeleton the turn never replaced (an error, or the model rebuilt another screen) goes away.
+			const d = skeletonPlaced ? this.pickDriver(driver) : null
+			if (d) await this.callClient(d, 'remove_skeleton', {})
+			this.turnAudit = null
 			this.abort = null
 			this.busy = false
 			this.status('')
@@ -420,11 +475,22 @@ export class AgentSession {
 			const changes = this.takeRecentChanges()
 			const sel = t.selection.length ? `\n${t.from.name} has selected: ${t.selection.map(stripId).join(', ')}.` : ''
 			const ch = changes.total ? `\nCollaborator edits since you last looked: ${JSON.stringify(changes.byUser)}` : ''
-			return { role: 'user', content: `[trigger:message] ${header}${sel}${ch}\n${t.from.name} says: ${t.text}` }
+			const asked = this.askedQuestions.length ? `\n(Questions you already asked in earlier turns; never ask them again: ${this.askedQuestions.map((q) => `"${q}"`).join(' ')})` : ''
+			let review = ''
+			if (isCritiqueRequest(t.text) && this.hasScreens()) {
+				// A spoken "what do you think?" gets the same measured facts as the Critique button.
+				const state = await this.callClient(driver, 'get_canvas_state', { audit: true }, signal)
+				const audit: AuditIssue[] = (state.data as any)?.audit ?? []
+				this.turnAudit = audit
+				review = `\nCanvas state: ${formatToolResult(state)}\n${auditNote(audit)}`
+			}
+			return { role: 'user', content: `[trigger:message] ${header}${sel}${ch}${asked}${review}\n${t.from.name} says: ${t.text}` }
 		}
 
 		const scope = t.kind === 'check_work' && t.shapeIds.length ? { shapeIds: t.shapeIds.map(stripId) } : {}
-		const state = await this.callClient(driver, 'get_canvas_state', scope, signal)
+		const state = await this.callClient(driver, 'get_canvas_state', { ...scope, audit: true }, signal)
+		const audit: AuditIssue[] = (state.data as any)?.audit ?? []
+		this.turnAudit = audit
 		const changes = this.takeRecentChanges()
 		const parts: ContentPart[] = []
 		const intro =
@@ -435,7 +501,7 @@ export class AgentSession {
 				: `[trigger:idle] ${header}\nThe collaborators paused after editing the canvas. Decide whether to comment (proactive mode).`
 		parts.push({
 			type: 'text',
-			text: `${intro}\nCanvas state: ${formatToolResult(state)}\nRecent collaborator edits: ${JSON.stringify(changes.byUser)}`,
+			text: `${intro}\nCanvas state: ${formatToolResult(state)}\nRecent collaborator edits: ${JSON.stringify(changes.byUser)}\n${auditNote(audit)}`,
 		})
 		const shapes: any[] = (state.data as any)?.shapes ?? []
 		if (shapes.some((s) => s.author?.kind === 'user' && s.type === 'draw')) {
@@ -610,6 +676,34 @@ export function isQuickEdit(text: string, hasScreens: boolean): boolean {
 	const screenish = /\b(screens?|pages?|dashboards?|landing|onboarding|flows?|apps?|website|site|views?|checkout|profile|settings|login|sign ?up|home ?screen)\b/.test(t)
 	const building = /\b(design|build|create|make|add|sketch|draw|another|new|generate)\b/.test(t)
 	return !(screenish && building && !/\b(to|on|in) the\b/.test(t))
+}
+
+/** The measured-issues paragraph a critique turn starts with. */
+export function auditNote(audit: AuditIssue[]): string {
+	return audit.length
+		? `MEASURED ISSUES (from real bounds and rendered colors; "audit" in the state): ${audit.map((i) => `[${i.kind}] ${i.detail} (screen ${i.screen})`).join('; ')}. These are the ONLY overflow, clipping, overlap, contrast, tap-target, text-size or alignment problems that exist: never claim one that is not listed.`
+		: `MEASURED ISSUES: none. Every node fits inside its frame and screen, no text is clipped, text contrast passes 4.5:1, phone tap targets are 44px+, no text is under 12px, card rows share heights. So never claim overflow, clipping, overlap, contrast, tap-target, text-size or alignment problems: critique hierarchy, copy, content, density and flow instead.`
+}
+
+const COLOR_WORDS = /\b(navy|teal|sage|emerald|indigo|violet|purple|blue|green|red|orange|yellow|pink|brown|gold|golden|black|white|gr[ae]y|pastel|neon|gradient|lavender|mint|coral|beige|cream|charcoal|slate|amber|crimson|maroon|olive|turquoise|cyan|magenta|peach|ivory)\b/gi
+
+/** True when a sentence names a color the request didn't (spoken before the tool calls, so it can't be checked against the canvas). */
+export function namesUnaskedColor(sentence: string, request: string): boolean {
+	const asked = request.toLowerCase()
+	return (sentence.match(COLOR_WORDS) ?? []).some((w) => !asked.includes(w.toLowerCase()))
+}
+
+/** A request for a new screen (not an edit, rebuild or critique): it gets an instant skeleton. */
+export function isNewScreenRequest(text: string, hasScreens: boolean): boolean {
+	if (isQuickEdit(text, hasScreens) || isCritiqueRequest(text)) return false
+	const t = text.toLowerCase()
+	if (/\b(redo|rebuild|redesign|rethink|replace|from scratch|update|change|tweak)\b/.test(t)) return false
+	return /\b(design|build|create|make|add|sketch|draw|generate|mock ?up|wireframe)\b/.test(t) && /\b(screens?|pages?|dashboards?|landing|onboarding|apps?|website|site|views?|checkout|profile|settings|log ?in|sign ?up|home ?screen)\b/.test(t)
+}
+
+/** "What do you think?", "critique the dashboard", "any feedback?" */
+export function isCritiqueRequest(text: string): boolean {
+	return /\b(critique|review|feedback|what do you think|how does (it|this) look|thoughts on)\b/i.test(text)
 }
 
 /** Drops claims the canvas can't back up ("a live chart", "real-time updates"): designs are static. */

@@ -21,6 +21,7 @@ import {
 	ICON_PATHS,
 	iconPaths,
 	initials,
+	inkOn,
 	isContainerKind,
 	letterSpacingFor,
 	LINE_HEIGHT,
@@ -56,6 +57,24 @@ export function themeFor(editor: ReturnType<typeof useEditor>, id: TLShapeId): T
 		shape = editor.getShape(shape.parentId as TLShapeId)
 	}
 	return DEFAULT_THEME
+}
+
+/** The opaque color behind a node: its own fill when it has one, else the nearest ancestor's (the screen's at worst). */
+export function backdropFor(editor: Editor, id: TLShapeId, theme: ThemeSpec, own = true): string {
+	let shape = editor.getShape(id)
+	let first = true
+	while (shape) {
+		if (shape.type === 'ui') {
+			const p = (shape as UiShape).props
+			if ((own || !first) && !['text', 'chart', 'image', 'checkbox', 'toggle', 'divider'].includes(p.kind)) {
+				const c = resolveColor(p.fill, theme)
+				if (/^#[0-9a-f]{6}$/i.test(c) && p.opacity > 0.5) return c
+			}
+		}
+		first = false
+		shape = editor.getShape(shape.parentId as TLShapeId)
+	}
+	return resolveColor('$bg', theme)
 }
 
 export function Icon({ name, size, color, strokeWidth = 2 }: { name: string; size: number; color: string; strokeWidth?: number }) {
@@ -142,7 +161,9 @@ function UiView({ shape }: { shape: UiShape }) {
 	const p = shape.props
 	const c = (v: string) => resolveColor(v, theme)
 	const fill = c(p.fill)
-	const textColor = c(p.textColor)
+	// Token text/icon colors stay readable on whatever is behind them (e.g. $primary on a dark $primarySoft pill).
+	const backdrop = useValue('ui backdrop', () => backdropFor(editor, shape.id, theme), [editor, shape.id, theme.mode, theme.primary])
+	const textColor = p.kind === 'input' ? c(p.textColor) : inkOn(p.textColor, backdrop, theme)
 	const stroke = c(p.stroke)
 	const padding = (shape.meta?.layout as { padding?: number[] } | undefined)?.padding
 	const base: CSSProperties = {

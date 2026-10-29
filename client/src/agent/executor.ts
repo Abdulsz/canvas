@@ -12,7 +12,16 @@ import {
 } from 'tldraw'
 import {
 	applySpec,
+	contrast,
 	DEFAULT_THEME,
+	inkOn,
+	LINE_HEIGHT,
+	parseHex as parseHexColor,
+	resolveColor,
+	type AuditIssue,
+	skeletonSpec,
+	type SkeletonKind,
+	unsupportedClaim,
 	DEVICES,
 	hugWidth,
 	isContainerKind,
@@ -32,7 +41,7 @@ import {
 import { AGENT_NAME, type Author, type ToolResult } from '../../../shared/protocol.ts'
 import { measureTextDom } from '../design/measure.ts'
 import { readUiTree, uiChildren, uiMeta } from '../design/tree.ts'
-import type { UiShape } from '../design/UiShapeUtil.tsx'
+import { backdropFor, themeFor, type UiShape } from '../design/UiShapeUtil.tsx'
 import { AGENT_AUTHOR, asAgent, authorOf } from './authorship.ts'
 import { findFreeSpot, fitBounds, nextScreenPosition, unionBounds } from './layout.ts'
 
@@ -194,10 +203,39 @@ export class CanvasExecutor {
 		return readUiTree(this.editor, shape)
 	}
 
+	/**
+	 * Charts whose data is in thousands ($42 ... $62) next to KPIs in full dollars
+	 * ($62,410) get a 'k' suffix, so the axis reads $75k instead of $75.
+	 */
+	private _fixChartUnits(root: UiShape) {
+		const editor = this.editor
+		const all = editor.getShapeAndDescendantIds([root.id])
+		const shapes = [...all].map((id) => editor.getShape(id)).filter(isUi)
+		const charts = shapes.filter((s) => s.props.kind === 'chart' && this._meta(s).chart)
+		if (!charts.length) return
+		const amounts: number[] = []
+		for (const s of shapes) {
+			if (s.props.kind !== 'text' || !s.props.text) continue
+			for (const m of s.props.text.matchAll(/[$€£]\s?(\d{1,3}(?:,\d{3})+)(?![\d.]*\s*[kKmM])/g)) amounts.push(Number(m[1].replace(/,/g, '')))
+		}
+		if (!amounts.length) return
+		const updates: TLShapePartial[] = []
+		for (const c of charts) {
+			const chart = this._meta(c).chart!
+			if (chart.suffix || !chart.prefix || !/[$€£]/.test(chart.prefix)) continue
+			const max = Math.max(...chart.data)
+			if (!(max > 0 && max < 1000)) continue
+			if (!amounts.some((a) => a / 1000 >= max * 0.2 && a / 1000 <= max * 5)) continue
+			updates.push({ id: c.id, type: 'ui', meta: { ...c.meta, chart: { ...chart, suffix: 'k' } } } as TLShapePartial)
+		}
+		if (updates.length) editor.updateShapes(updates)
+	}
+
 	/** Re-runs auto layout on a screen/root and writes back the changed boxes. */
 	private _relayout(root: UiShape | null) {
 		if (!root || !this.editor.getShape(root.id)) return
 		const editor = this.editor
+		if (!this.hooks.asUser) this._fixChartUnits(root)
 		const tree = this._toTree(editor.getShape(root.id) as UiShape)
 		const node = toLayoutNode(tree)
 		let boxes = layoutTree(node, { measure: measureTextDom })
@@ -364,6 +402,116 @@ export class CanvasExecutor {
 		return warnings.slice(0, 8)
 	}
 
+	/**
+	 * Measured problems on a screen, from real bounds and rendered colors: content
+	 * overflowing its container, clipped labels, text contrast under 4.5:1 (3:1 for
+	 * large text), phone touch targets under 44px, text under 12px, rows of cards
+	 * with unequal heights. Critiques may only claim geometry/contrast issues listed here.
+	 */
+	_audit(screen: UiShape): AuditIssue[] {
+		const editor = this.editor
+		const issues: AuditIssue[] = []
+		const sid = bare(screen.id)
+		const theme = themeFor(editor, screen.id)
+		const phone = screen.props.w < 600
+		const sb = editor.getShapePageBounds(screen.id)
+		const add = (s: UiShape, kind: AuditIssue['kind'], detail: string) => issues.push({ id: bare(s.id), screen: sid, kind, detail })
+		const walk = (s: UiShape) => {
+			const p = s.props
+			const kids = this._children(s)
+			if (isContainerKind(p.kind) && kids.length) {
+				const bottom = Math.max(...kids.map((k) => k.y + k.props.h))
+				const right = Math.max(...kids.map((k) => k.x + k.props.w))
+				if (bottom > p.h + 1) add(s, 'overflow', `content overflows "${bare(s.id)}" by ${Math.round(bottom - p.h)}px at the bottom`)
+				if (right > p.w + 1) add(s, 'overflow', `content overflows "${bare(s.id)}" by ${Math.round(right - p.w)}px on the right`)
+				const l = this._meta(s).layout
+				const cards = kids.filter((k) => k.props.kind === 'frame' && (k.props.fill !== 'transparent' || k.props.stroke !== 'transparent'))
+				if (l?.mode === 'horizontal' && cards.length >= 2) {
+					const hs = cards.map((k) => k.props.h)
+					if (Math.max(...hs) - Math.min(...hs) > 4) add(s, 'spacing', `cards in "${bare(s.id)}" have unequal heights (${Math.round(Math.min(...hs))}-${Math.round(Math.max(...hs))}px)`)
+				}
+			}
+			const b = editor.getShapePageBounds(s.id)
+			if (sb && b && s.id !== screen.id && (b.maxY > sb.maxY + 1 || b.maxX > sb.maxX + 1 || b.x < sb.x - 1 || b.y < sb.y - 1)) add(s, 'overflow', `"${bare(s.id)}" extends outside the screen`)
+			const hasText = ['text', 'button', 'badge', 'input', 'checkbox'].includes(p.kind) && !!p.text
+			if (hasText && p.w >= 1) {
+				const wraps = p.kind === 'text' && p.h >= p.fontSize * LINE_HEIGHT * 1.5
+				if (p.kind === 'text') {
+					const m = measureTextDom(p.text, p.fontSize, wraps ? p.w : undefined, p.fontWeight)
+					if (wraps ? m.h > p.h + 2 : m.w > p.w + 2) add(s, 'clipped', `the text of "${bare(s.id)}" doesn't fit its box`)
+				} else if (p.kind === 'button') {
+					const m = this._meta(s)
+					const need = hugWidth({ id: s.id, kind: 'button', w: p.w, h: p.h, text: p.text, icon: p.icon, fontSize: p.fontSize, fontWeight: p.fontWeight, layout: m.layout, sizing: m.sizing }, measureTextDom)
+					if (p.w + 2 < need) add(s, 'clipped', `the label of "${bare(s.id)}" is clipped (needs ${Math.round(need)}px, has ${Math.round(p.w)}px)`)
+				}
+				if (p.fontSize < 12) add(s, 'small_text', `"${bare(s.id)}" is ${p.fontSize}px text`)
+				const bg = backdropFor(editor, s.id, theme, !['text', 'checkbox'].includes(p.kind))
+				const fg = p.kind === 'input' ? resolveColor(p.textColor, theme) : inkOn(p.textColor, bg, theme)
+				const large = p.fontSize >= 24 || (p.fontSize >= 18.5 && p.fontWeight >= 700)
+				const ratio = contrast(fg, bg)
+				if (parseHexColor(fg) && parseHexColor(bg) && ratio < (large ? 3 : 4.5)) add(s, 'contrast', `"${bare(s.id)}" text contrast is ${ratio.toFixed(1)}:1`)
+			}
+			if (phone && (p.kind === 'button' || p.kind === 'input') && p.h < 44 && p.w >= 1) add(s, 'touch', `"${bare(s.id)}" is ${Math.round(p.h)}px tall (under 44)`)
+			kids.forEach(walk)
+		}
+		walk(screen)
+		return issues.slice(0, 20)
+	}
+
+	/** Where a critique note goes (see add_comment). */
+	private _commentSpot(id: TLShapeId, target: TLShape | null, tb: Box | null, sb: Box | null, NOTE: number, view: Box): { x: number; y: number } {
+		const editor = this.editor
+		if (!tb || !sb) return { x: view.center.x - NOTE / 2, y: view.center.y - NOTE / 2 }
+		const ownScreen = target ? this._screenOf(target) : null
+		const obstacles: Box[] = []
+		const otherScreens: Box[] = []
+		for (const s of editor.getCurrentPageShapes()) {
+			if (s.id === id || s.type === 'arrow' || (target && s.id === target.id)) continue
+			if (isUi(s) && !isScreen(s)) continue
+			if (s.type === 'geo' && (s.meta as Args)?.role === 'annotation') continue
+			const b = editor.getShapePageBounds(s)
+			if (!b) continue
+			const box = b.clone().expandBy(24)
+			if (isScreen(s)) {
+				box.y -= 28
+				box.h += 28
+				if (s.id !== ownScreen?.id) otherScreens.push(b)
+			}
+			obstacles.push(box)
+		}
+		const gap = 40
+		const H = NOTE * 1.15 // notes grow a little with longer text
+		const target0 = tb.center
+		const free = (b: Box) => !obstacles.some((o) => Box.Collides(o, b))
+		// The leader runs from the note's center to the node: it must not cut through another screen.
+		const crosses = (b: Box) => otherScreens.some((o) => segmentHitsBox(b.center, target0, o))
+		const yLevel = Math.max(sb.y, Math.min(tb.center.y - H / 2, sb.maxY - H))
+		const xLevel = Math.max(sb.x, Math.min(tb.center.x - NOTE / 2, sb.maxX - NOTE))
+		const lanes: { start: Box; dx: number; dy: number }[] = [
+			{ start: new Box(sb.maxX + gap, yLevel, NOTE, H), dx: 0, dy: 1 },
+			{ start: new Box(sb.x - gap - NOTE, yLevel, NOTE, H), dx: 0, dy: 1 },
+			{ start: new Box(xLevel, sb.maxY + gap, NOTE, H), dx: 1, dy: 0 },
+			{ start: new Box(xLevel, sb.y - 28 - gap - H, NOTE, H), dx: 1, dy: 0 },
+		]
+		let best: { box: Box; score: number } | null = null
+		for (const [li, lane] of lanes.entries()) {
+			for (let k = 0; k < 40; k++) {
+				// Slide along the lane: 0, +1, -1, +2, -2... steps of 24.
+				const off = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 24
+				const b = new Box(lane.start.x + lane.dx * off, lane.start.y + lane.dy * off, NOTE, H)
+				if (!free(b) || crosses(b)) continue
+				const inView = b.x >= view.x && b.y >= view.y && b.maxX <= view.maxX && b.maxY <= view.maxY
+				// Beside the screen reads best; above/below only when the sides are taken or far.
+				const score = Math.hypot(b.center.x - target0.x, b.center.y - target0.y) + (inView ? 0 : 200) + (li >= 2 ? 300 : 0)
+				if (!best || score < best.score) best = { box: b, score }
+				break
+			}
+		}
+		if (best) return { x: best.box.x, y: best.box.y }
+		const spot = findFreeSpot(editor, lanes[0].start, { avoidAll: true, ignore: new Set([id]) })
+		return { x: spot.x, y: spot.y }
+	}
+
 	private _deleteWithArrows(ids: TLShapeId[]) {
 		if (ids.length) this.editor.deleteShapes(ids)
 	}
@@ -450,11 +598,43 @@ export class CanvasExecutor {
 
 	// ---------------------------------------------------------- design tools
 
+	/**
+	 * Not a model tool: the server calls it the moment a new screen is requested,
+	 * so a placeholder screen (soft blocks where the sections will go) is on the
+	 * canvas within a second. The turn's first new create_screen replaces it in place.
+	 */
+	create_skeleton(args: Args) {
+		const editor = this.editor
+		this.remove_skeleton()
+		const device = (DEVICES[args.device as Device] ? args.device : 'iphone') as Device
+		const kind = (['dashboard', 'landing', 'login', 'onboarding', 'settings', 'list'].includes(args.kind) ? args.kind : 'list') as SkeletonKind
+		const id = cleanId(args.id ?? `skeleton_${Date.now().toString(36)}`)
+		const prefix = (n: UiNodeSpec): UiNodeSpec => ({ ...n, id: n.id === 'sk' ? id : `${id}_${n.id}`, ...(n.children ? { children: n.children.map(prefix) } : {}) })
+		this.create_screen({ ...prefix(skeletonSpec(kind, device)), id, device, name: String(args.name ?? 'New screen') })
+		this._act(() => editor.updateShape({ id: toId(id), type: 'ui', meta: { ...editor.getShape(toId(id))!.meta, skeleton: true } } as TLShapePartial))
+		const b = editor.getShapePageBounds(toId(id))
+		const v = editor.getViewportPageBounds()
+		if (b && !(b.x >= v.x && b.y >= v.y && b.maxX <= v.maxX && b.maxY <= v.maxY)) {
+			const others = editor.getCurrentPageShapes().filter(isScreen)
+			fitBounds(editor, unionBounds(editor, others.length <= 3 ? others : [editor.getShape(toId(id))])!, { inset: 64 })
+		}
+		return { id }
+	}
+
+	/** Removes a leftover skeleton screen (a turn that never built its screen). */
+	remove_skeleton() {
+		const ids = this.editor.getCurrentPageShapes().filter((s) => isScreen(s) && s.meta?.skeleton).map((s) => s.id)
+		if (ids.length) this._act(() => this.editor.deleteShapes(ids))
+		return { removed: ids.length }
+	}
+
 	create_screen(args: Args) {
 		const editor = this.editor
 		if (!args.id) throw new Error('create_screen needs an id')
 		const id = toId(args.id)
 		const existing = editor.getShape(id)
+		// The first real screen of the turn takes the skeleton's place.
+		const skeleton = !existing ? (editor.getCurrentPageShapes().find((s) => isScreen(s) && s.meta?.skeleton) as UiShape | undefined) : undefined
 		if (existing && !isScreen(existing)) {
 			throw new Error(`Id "${bare(id)}" is already used by a ${(existing as TLShape).type === 'ui' ? ((existing as TLShape).props as UiProps).kind : (existing as TLShape).type}. Pick another screen id.`)
 		}
@@ -466,7 +646,7 @@ export class CanvasExecutor {
 		tree.props.name = String(args.name ?? (existing as UiShape | undefined)?.props.name ?? bare(id))
 		// A replaced screen keeps its theme; a new one follows the latest screen, so
 		// "add a sign-up screen" after "dark mode" stays dark.
-		const latest = editor.getCurrentPageShapesSorted().filter(isScreen).at(-1)
+		const latest = editor.getCurrentPageShapesSorted().filter((s) => isScreen(s) && s.id !== skeleton?.id).at(-1) ?? skeleton
 		const prevTheme = ((existing ?? latest)?.meta?.theme as Partial<ThemeSpec> | undefined) ?? {}
 		const themeMeta: ThemeSpec = {
 			mode: theme === 'dark' || theme === 'light' ? theme : (prevTheme.mode ?? 'light'),
@@ -477,10 +657,12 @@ export class CanvasExecutor {
 				? { x, y }
 				: existing
 					? { x: typeof x === 'number' ? x : existing.x, y: typeof y === 'number' ? y : existing.y }
-					: nextScreenPosition(editor, w, h)
+					: skeleton
+						? { x: skeleton.x, y: skeleton.y }
+						: nextScreenPosition(editor, w, h)
 		tree.x = pos.x
 		tree.y = pos.y
-		const replaceable = new Set(existing ? editor.getShapeAndDescendantIds([existing.id]) : [])
+		const replaceable = new Set(existing ? editor.getShapeAndDescendantIds([existing.id]) : skeleton ? editor.getShapeAndDescendantIds([skeleton.id]) : [])
 		const renamedRaw = this._dedupeIds(tree, bare(id), new Set([...replaceable].map(bare)))
 
 		this._act(() =>
@@ -498,6 +680,7 @@ export class CanvasExecutor {
 					} as TLShapePartial)
 					for (const child of tree.children) this._createTree(child, id)
 				} else {
+					if (skeleton) editor.deleteShapes([skeleton.id])
 					this._createTree(tree, undefined, { theme: themeMeta })
 				}
 				this._relayout(editor.getShape(id) as UiShape)
@@ -784,8 +967,10 @@ export class CanvasExecutor {
 		const screens = uiRoots.map((s) => this._node(s))
 		const others = shapes.filter((s) => !isUi(s)).map((s) => this._serialize(s))
 		const limit = 200
+		const audited = args.audit ? [...new Set(uiRoots.map((s) => this._screenOf(s)).filter((s): s is UiShape => !!s))] : []
 		return {
 			screens,
+			...(args.audit ? { audit: audited.flatMap((s) => this._audit(s)) } : {}),
 			...(others.length ? { shapes: others.slice(0, limit) } : {}),
 			...(others.length > limit ? { truncated: true } : {}),
 			viewport: (() => {
@@ -867,13 +1052,16 @@ export class CanvasExecutor {
 		return { id: bare(id), highlighted: targets.filter(Boolean).length }
 	}
 
-	add_comment(args: Args) {
+	async add_comment(args: Args) {
 		const editor = this.editor
+		// The note sizes itself to its text on create: measure with the real font, not a fallback.
+		if (typeof document !== 'undefined') await Promise.race([document.fonts?.ready, new Promise((r) => setTimeout(r, 800))])
 		const id = toId(args.id)
 		const target = args.targetShapeId ? editor.getShape(toId(args.targetShapeId)) : undefined
 		if (args.targetShapeId && !target) throw new Error(`No shape with id "${args.targetShapeId}". Nodes: ${this._knownIds(isUi)}`)
-		// Comments sit outside the screen (right side first, then left), level with the node,
-		// readable at the current zoom, clear of screens and their name labels, and in view.
+		// Comments sit beside their screen (right, left, below, above), level with the node,
+		// readable at the current zoom, clear of screens, their name labels and other notes,
+		// and placed so the connector to the node is short and crosses no other screen.
 		const screen = target ? this._screenOf(target) : null
 		const tb = target ? editor.getShapePageBounds(target) : null
 		const sb = screen ? editor.getShapePageBounds(screen) : tb
@@ -881,21 +1069,7 @@ export class CanvasExecutor {
 		const scale = Math.min(2.2, Math.max(1, 0.6 / Math.max(zoom, 0.05)))
 		const NOTE = 200 * scale
 		const view = editor.getViewportPageBounds()
-		const ignore = new Set<string>([id, ...(target ? [target.id] : [])])
-		const y = tb ? Math.max(tb.y - 20, (sb?.y ?? tb.y)) : view.center.y - NOTE / 2
-		const candidates = tb && sb ? [new Box(sb.maxX + 48, y, NOTE, NOTE), new Box(sb.x - 48 - NOTE, y, NOTE, NOTE)] : [new Box(view.center.x - NOTE / 2, view.center.y - NOTE / 2, NOTE, NOTE)]
-		const inView = (b: Box) => b.x >= view.x && b.y >= view.y && b.maxX <= view.maxX && b.maxY <= view.maxY
-		let pos: { x: number; y: number } | null = null
-		for (const rect of candidates) {
-			const spot = findFreeSpot(editor, rect, { avoidAll: true, ignore })
-			const box = new Box(spot.x, spot.y, NOTE, NOTE)
-			if (inView(box)) {
-				pos = spot
-				break
-			}
-			pos ??= spot
-		}
-		pos ??= { x: candidates[0].x, y: candidates[0].y }
+		const pos = this._commentSpot(id, target ?? null, tb ?? null, sb ?? null, NOTE, view)
 		const kindColor: Record<string, TLDefaultColorStyle> = {
 			issue: 'light-red',
 			suggestion: 'yellow',
@@ -907,7 +1081,15 @@ export class CanvasExecutor {
 		// Feedback on a collaborator's node is addressed to them even if the model forgot to say so.
 		const targetAuthor = target ? authorOf(target) : null
 		const to = String(args.addressedTo ?? '').replace(/^@/, '').trim() || (targetAuthor?.kind === 'user' ? targetAuthor.name : '')
-		const body = String(args.text ?? '')
+		const body = String(args.text ?? '').trim().slice(0, 160)
+		// Measurable claims (overflow, clipping, contrast, tap targets...) must match what the audit measured.
+		if (args.kind !== 'praise') {
+			const screens = screen ? [screen] : editor.getCurrentPageShapes().filter(isScreen)
+			const claim = unsupportedClaim(body, screens.flatMap((s) => this._audit(s)))
+			if (claim) {
+				throw new Error(`Not added: the comment claims "${claim}", but measuring ${screen ? `"${bare(screen.id)}"` : 'the screens'} found no such problem (see the audit). Comment only on measured issues, or on hierarchy, copy and content.`)
+			}
+		}
 		const text = to && !body.startsWith(`@${to}`) ? `@${to} ${body}` : body
 		const leader = createShapeId(`${bare(id)}_leader`)
 		this._act(() => {
@@ -925,8 +1107,26 @@ export class CanvasExecutor {
 			}
 		})
 		this._pointAt(id)
+		// Re-measure once fonts settle (any update recomputes the note's growY), so long text never spills out.
+		setTimeout(() => {
+			const note = editor.getShape(id)
+			if (note) this._act(() => editor.updateShape({ id, type: 'note', props: { growY: ((note.props as { growY?: number }).growY ?? 0) + 1 } } as TLShapePartial))
+		}, 500)
 		return { id: bare(id), x: Math.round(pos.x), y: Math.round(pos.y) }
 	}
+}
+
+/** True when the segment a-b passes through box o. */
+function segmentHitsBox(a: { x: number; y: number }, b: { x: number; y: number }, o: Box): boolean {
+	// Sample the segment: boxes are screens, far larger than the step.
+	const n = Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 12)
+	for (let i = 0; i <= n; i++) {
+		const t = n ? i / n : 0
+		const x = a.x + (b.x - a.x) * t
+		const y = a.y + (b.y - a.y) * t
+		if (x > o.x && x < o.maxX && y > o.y && y < o.maxY) return true
+	}
+	return false
 }
 
 /**

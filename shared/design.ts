@@ -333,6 +333,25 @@ export function contrast(a: string, b: string): number {
 	return (l1 + 0.05) / (l2 + 0.05)
 }
 
+/** Nudges a #rrggbb foreground toward white or black until it reads on `bg` (>= min:1). */
+export function legibleOn(fg: string, bg: string, min = 4.5): string {
+	if (!parseHex(fg) || !parseHex(bg) || contrast(fg, bg) >= min) return fg
+	const toward = contrast('#ffffff', bg) > contrast('#000000', bg) ? '#ffffff' : '#000000'
+	let c = fg
+	for (let i = 1; i <= 10 && contrast(c, bg) < min; i++) c = mixHex(fg, toward, i * 0.1)
+	return c
+}
+
+/**
+ * The color a token text/icon color actually renders as on `bg`: theme tokens
+ * ($primary on a $primarySoft nav pill in dark mode, $muted on a tint) are
+ * nudged to >= 4.5:1. Explicit hex colors are the designer's choice and stay.
+ */
+export function inkOn(value: string, bg: string, theme: Partial<ThemeSpec>): string {
+	const c = resolveColor(value, theme)
+	return value.trim().startsWith('$') ? legibleOn(c, bg) : c
+}
+
 // Simple 24x24 stroke icons (feather-style paths), rendered by the client and the HTML export.
 export const ICON_PATHS: Record<string, string> = {
 	search: 'M18 11a7 7 0 1 1-14 0a7 7 0 1 1 14 0z M21 21l-4.35-4.35',
@@ -965,8 +984,12 @@ export function iconSvg(name: string, size: number, color: string): string {
  */
 export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.meta.theme ?? DEFAULT_THEME): string {
 	const vars = TOKENS.map((t) => `--${t}: ${resolveColor('$' + t, theme)};`).join(' ')
-	const node = (n: UiTreeNode, parent: LayoutSpec | null, inPage = false): string => {
+	const node = (n: UiTreeNode, parent: LayoutSpec | null, inPage = false, behind = resolveColor('$bg', theme)): string => {
 		const p = n.props
+		const ownFill = resolveColor(p.fill, theme)
+		const bg = !['text', 'chart', 'image', 'checkbox', 'toggle', 'divider'].includes(p.kind) && parseHex(ownFill) && p.opacity > 0.5 ? ownFill : behind
+		// Token colors are nudged to stay readable on what is behind them (same rule as the canvas).
+		const ink = (v: string) => (v.startsWith('$') && inkOn(v, bg, theme) !== resolveColor(v, theme) ? inkOn(v, bg, theme) : cssColor(v))
 		const s: string[] = []
 		// Same rule as the layout engine: fixed-width blocks in a desktop page column are centered.
 		if (inPage && parent?.mode === 'vertical' && parent.alignItems === 'stretch' && n.meta.sizing.w === 'fixed') s.push('align-self: center')
@@ -996,7 +1019,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 		if (p.shadow !== 'none') s.push(`box-shadow: ${SHADOWS[p.shadow]}`)
 		if (p.opacity !== 1) s.push(`opacity: ${p.opacity}`)
 		if (['text', 'button', 'input', 'checkbox', 'avatar', 'badge'].includes(p.kind)) {
-			s.push(`color: ${cssColor(p.textColor)}`, `font-size: ${p.fontSize}px`, `font-weight: ${p.fontWeight}`, `line-height: ${LINE_HEIGHT}`)
+			s.push(`color: ${ink(p.textColor)}`, `font-size: ${p.fontSize}px`, `font-weight: ${p.fontWeight}`, `line-height: ${LINE_HEIGHT}`)
 			if (letterSpacingFor(p.fontSize) !== 'normal') s.push(`letter-spacing: ${letterSpacingFor(p.fontSize)}`)
 			if (p.kind === 'text') s.push(`text-align: ${p.align}`, 'margin: 0')
 		}
@@ -1020,7 +1043,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 			case 'chart':
 				return `<div ${style} role="img" aria-label="${esc(p.name || 'chart')}">${n.meta.chart ? chartSvg(n.meta.chart, p.w, p.h, theme, n.id) : ''}</div>`
 			case 'icon':
-				return `<span ${style}>${iconSvg(p.icon, Math.round(Math.min(p.w, p.h) * (p.fill === 'transparent' ? 1 : 0.55)), cssColor(p.textColor))}</span>`
+				return `<span ${style}>${iconSvg(p.icon, Math.round(Math.min(p.w, p.h) * (p.fill === 'transparent' ? 1 : 0.55)), ink(p.textColor))}</span>`
 			case 'avatar':
 				return `<div ${style}>${p.icon ? icon(Math.round(p.w * 0.5), 'currentColor') : esc(initials(p.text || p.name))}</div>`
 			case 'toggle':
@@ -1030,7 +1053,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 			case 'divider':
 				return `<hr ${style.replace('style="', 'style="border: 0; margin: 0; ')} />`
 			default: {
-				const inner = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map((c) => node(c, childParent, p.kind === 'screen' && p.w >= 1000)).join('\n')
+				const inner = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map((c) => node(c, childParent, p.kind === 'screen' && p.w >= 1000, bg)).join('\n')
 				let chrome = ''
 				if (p.kind === 'screen') {
 					const ink = resolveColor('$text', theme)
@@ -1066,4 +1089,124 @@ ${node(tree, null)}
 </body>
 </html>
 `
+}
+
+// ------------------------------------------------------------------ critique audit
+
+/** Categories of measurable problems the executor's audit reports (see CanvasExecutor._audit). */
+export type AuditKind = 'overflow' | 'clipped' | 'contrast' | 'touch' | 'small_text' | 'spacing'
+export type AuditIssue = { id: string; screen: string; kind: AuditKind; detail: string }
+
+/**
+ * Measurable claims a critique can make, by category. A sentence or comment that
+ * makes one of these claims is only allowed when the audit found that kind of
+ * problem (the model otherwise misreads geometry: "the table drops below the frame").
+ */
+const CLAIMS: [AuditKind[], RegExp][] = [
+	[['overflow', 'clipped'], /\b(overflow\w*|clipp\w*|cut[s]? off|cut-off|truncat\w*|drops? (below|off|out)|spill\w*|outside (of )?(the |its )?(frame|screen|card|artboard)|off[- ]screen|past the (frame|screen|edge|bottom)|beyond the (frame|screen|edge)|overlap\w*|runs? (off|past|out of))\b/i],
+	[['contrast'], /\b((low|poor|weak|insufficient|not enough|lacks?|lacking|more|better|higher|stronger) contrast|contrast (is |feels |looks )?(low|weak|poor|too)|hard to read|low legibility|illegible|washed[- ]out|barely visible|hard to see)\b/i],
+	[['touch'], /\b(tap targets?|touch targets?|hit (area|targets?)|too small to (tap|hit|press)|small to tap|hard to tap|(under|below|less than) 44|44 ?(px|pt|points|pixels))\b/i],
+	[['small_text'], /\b(tiny (text|type|labels?)|(text|type|font|labels?) (is |are )?too small|small text|(under|smaller than|below) 1[0-3] ?(px|pixels))\b/i],
+	[['spacing'], /\b(misalign\w*|not aligned|out of alignment|uneven (spacing|gaps?|heights?)|inconsistent (spacing|gaps?|padding|margins?|heights?)|unequal (heights?|widths?))\b/i],
+]
+
+/** The audit kinds a piece of critique text claims (empty when it makes no measurable claim). */
+export function claimedAuditKinds(text: string): AuditKind[][] {
+	return CLAIMS.filter(([, re]) => re.test(text)).map(([kinds]) => kinds)
+}
+
+/** A claim in `text` that no audit issue backs up, or null when every claim is backed (or none is made). */
+export function unsupportedClaim(text: string, issues: Pick<AuditIssue, 'kind'>[]): string | null {
+	const found = new Set(issues.map((i) => i.kind))
+	for (const [kinds, re] of CLAIMS) {
+		if (!re.test(text)) continue
+		if (!kinds.some((k) => found.has(k))) return (text.match(re)?.[0] ?? kinds[0]).toLowerCase()
+	}
+	return null
+}
+
+// ------------------------------------------------------------------ skeletons
+
+export type SkeletonKind = 'dashboard' | 'landing' | 'login' | 'onboarding' | 'settings' | 'list'
+
+/** What a "design a ... screen" request is for, and on which device (used for the instant skeleton). */
+export function classifyScreenRequest(text: string): { kind: SkeletonKind; device: Device; name: string } {
+	const t = text.toLowerCase()
+	const kind: SkeletonKind = /dashboard|analytics|admin|overview|metrics/.test(t)
+		? 'dashboard'
+		: /landing|marketing|homepage|website/.test(t)
+			? 'landing'
+			: /log ?in|sign ?(in|up)|register|auth/.test(t)
+				? 'login'
+				: /onboarding|welcome|intro|walkthrough|splash/.test(t)
+					? 'onboarding'
+					: /settings|preferences|account|profile/.test(t)
+						? 'settings'
+						: 'list'
+	const device: Device = /tablet|ipad/.test(t)
+		? 'tablet'
+		: /android/.test(t)
+			? 'android'
+			: /desktop|\bweb\b|website|landing|\bsite\b|saas|admin/.test(t) || (kind === 'dashboard' && !/mobile|phone|iphone|ios|\bapp\b/.test(t))
+				? 'desktop'
+				: 'iphone'
+	const names: Record<SkeletonKind, string> = { dashboard: 'Dashboard', landing: 'Landing page', login: 'Log in', onboarding: 'Onboarding', settings: 'Settings', list: 'New screen' }
+	return { kind, device, name: names[kind] }
+}
+
+/**
+ * A loading skeleton for a screen being designed: the screen with soft
+ * placeholder blocks where its sections will go. It appears the moment a new
+ * screen is requested and the first real create_screen replaces it in place.
+ */
+export function skeletonSpec(kind: SkeletonKind, device: Device): UiNodeSpec {
+	const bar = (id: string, w: number | 'fill', h: number, extra: Partial<UiNodeSpec> = {}): UiNodeSpec => ({ id, type: 'rect', width: w, height: h, radius: Math.min(8, h / 2), fill: '$surfaceAlt', ...extra })
+	const card = (id: string, children: UiNodeSpec[], extra: Partial<UiNodeSpec> = {}): UiNodeSpec => ({ id, type: 'frame', fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16, padding: 20, gap: 12, children, ...extra })
+	const rows = (id: string, n: number): UiNodeSpec[] =>
+		Array.from({ length: n }, (_, i) => ({ id: `${id}${i}`, type: 'frame', layout: 'horizontal', gap: 12, alignItems: 'center', children: [bar(`${id}${i}a`, 36, 36, { radius: 10 }), { id: `${id}${i}t`, type: 'frame', width: 'fill', gap: 6, children: [bar(`${id}${i}b`, 'fill', 12), bar(`${id}${i}c`, 120, 10)] }] }))
+	const wide = device === 'desktop' || device === 'tablet'
+	if (kind === 'dashboard' && wide) {
+		return {
+			id: 'sk',
+			type: 'screen',
+			layout: 'horizontal',
+			padding: 0,
+			gap: 0,
+			children: [
+				{ id: 'sk_side', type: 'frame', width: 248, height: 'fill', fill: '$surface', stroke: '$border', strokeWidth: 1, padding: [28, 20], gap: 14, children: [bar('sk_logo', 120, 28), ...[0, 1, 2, 3, 4, 5].map((i) => bar(`sk_nav${i}`, 'fill', 32))] },
+				{
+					id: 'sk_main', type: 'frame', width: 'fill', height: 'fill', padding: [32, 40], gap: 24,
+					children: [
+						{ id: 'sk_head', type: 'frame', layout: 'horizontal', justify: 'space-between', alignItems: 'center', children: [bar('sk_title', 240, 32), bar('sk_search', 300, 40)] },
+						{ id: 'sk_stats', type: 'frame', layout: 'horizontal', gap: 20, alignItems: 'stretch', children: [0, 1, 2, 3].map((i) => card(`sk_st${i}`, [bar(`sk_st${i}a`, 100, 12), bar(`sk_st${i}b`, 140, 28), bar(`sk_st${i}c`, 80, 12)], { width: 'fill' })) },
+						{ id: 'sk_mid', type: 'frame', layout: 'horizontal', gap: 24, alignItems: 'stretch', children: [card('sk_chart', [bar('sk_ch_t', 160, 16), bar('sk_ch', 'fill', 240, { radius: 12 })], { width: 'fill' }), card('sk_sidecard', [bar('sk_sc_t', 140, 16), ...rows('sk_sc', 4)], { width: 360 })] },
+						card('sk_table', [bar('sk_tb_t', 200, 16), ...rows('sk_tr', 4)], { width: 'fill' }),
+					],
+				},
+			],
+		}
+	}
+	if (wide) {
+		return {
+			id: 'sk', type: 'screen', padding: [24, 80, 80, 80], gap: 32, alignItems: 'center',
+			children: [
+				{ id: 'sk_nav', type: 'frame', layout: 'horizontal', justify: 'space-between', alignItems: 'center', children: [bar('sk_logo', 140, 28), bar('sk_links', 360, 14), bar('sk_cta', 120, 40)] },
+				bar('sk_badge', 180, 26, { radius: 13 }),
+				bar('sk_h1', 760, 56, { radius: 12 }),
+				bar('sk_h2', 560, 56, { radius: 12 }),
+				bar('sk_sub', 600, 18),
+				{ id: 'sk_btns', type: 'frame', layout: 'horizontal', width: 'hug', gap: 12, children: [bar('sk_b1', 160, 52, { radius: 12 }), bar('sk_b2', 160, 52, { radius: 12 })] },
+				card('sk_shot', [bar('sk_shot_in', 'fill', 420, { radius: 12 })], { width: 1120, radius: 24, padding: 16 }),
+			],
+		}
+	}
+	const phone: UiNodeSpec[] =
+		kind === 'onboarding'
+			? [bar('sk_img', 'fill', 360, { radius: 32 }), bar('sk_badge', 110, 24, { radius: 12 }), bar('sk_t1', 280, 30), bar('sk_t2', 220, 30), bar('sk_sub', 300, 14), { id: 'sk_fill', type: 'frame', height: 'fill', children: [] }, bar('sk_btn', 'fill', 52, { radius: 12 })]
+			: kind === 'login'
+				? [{ id: 'sk_fill0', type: 'frame', height: 'fill', children: [] }, bar('sk_logo', 56, 56, { radius: 16 }), bar('sk_t1', 220, 30), bar('sk_sub', 260, 14), bar('sk_l1', 80, 12), bar('sk_in1', 'fill', 48, { radius: 12 }), bar('sk_l2', 80, 12), bar('sk_in2', 'fill', 48, { radius: 12 }), bar('sk_btn', 'fill', 52, { radius: 12 }), { id: 'sk_fill1', type: 'frame', height: 'fill', children: [] }]
+				: kind === 'settings'
+					? [bar('sk_t1', 160, 32), card('sk_prof', rows('sk_pr', 1)), bar('sk_h1', 90, 12), card('sk_s1', rows('sk_a', 3)), bar('sk_h2', 110, 12), card('sk_s2', rows('sk_b', 3))]
+					: [bar('sk_t1', 200, 32), bar('sk_sub', 260, 14), card('sk_hero', [bar('sk_h_a', 120, 14), bar('sk_h_b', 180, 28)]), card('sk_list', rows('sk_r', 5))]
+	return { id: 'sk', type: 'screen', padding: [64, 24, 40, 24], gap: 16, children: phone }
 }

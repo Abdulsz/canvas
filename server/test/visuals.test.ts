@@ -107,3 +107,40 @@ test('spoken lines never claim live or animated designs', () => {
 	assert.equal(honestSpeech('A live board mock sits in the product frame.'), 'A board mock sits in the product frame.')
 	assert.equal(honestSpeech('A line chart that updates every second leads the page.'), 'A line chart leads the page.')
 })
+
+test('critique claims must be backed by a measured audit issue', async () => {
+	const { unsupportedClaim } = await import('../../shared/design.ts')
+	assert.equal(unsupportedClaim('The table drops below the desktop frame.', []), 'drops below')
+	assert.equal(unsupportedClaim('This button is under 44 pixels tall, hard to tap.', []) !== null, true)
+	assert.equal(unsupportedClaim('The label has low contrast on the tint.', [{ kind: 'contrast' }]), null)
+	assert.equal(unsupportedClaim('Great contrast on the CTA; the headline could be shorter.', []), null)
+	assert.equal(unsupportedClaim('The hierarchy is clear, but the empty state is missing.', []), null)
+	assert.equal(unsupportedClaim('The chart card overflows the main column.', [{ kind: 'overflow' }]), null)
+})
+
+test('token text on a tint stays readable in dark mode; hex colors are left alone', async () => {
+	const { inkOn, contrast } = await import('../../shared/design.ts')
+	const theme = { mode: 'dark' as const, primary: '#16a34a' }
+	const pill = resolveColor('$primarySoft', theme)
+	assert.ok(contrast(inkOn('$primary', pill, theme), pill) >= 4.5)
+	assert.equal(inkOn('#777777', '#ffffff', theme), '#777777')
+})
+
+test('chart callouts show the exact value; the axis abbreviates', () => {
+	const svg = chartSvg({ type: 'bar', data: [48200, 51900, 62410], labels: ['Apr', 'May', 'Jun'], prefix: '$' }, 400, 220, { mode: 'light' }, 'c')
+	assert.match(svg, />\$62,410</)
+	assert.match(svg, />\$\d+k</)
+})
+
+test('new-screen requests are classified for the instant skeleton', async () => {
+	const { classifyScreenRequest } = await import('../../shared/design.ts')
+	const { isNewScreenRequest } = await import('../src/agent.ts')
+	assert.deepEqual(classifyScreenRequest('Build a fintech dashboard for desktop'), { kind: 'dashboard', device: 'desktop', name: 'Dashboard' })
+	assert.equal(classifyScreenRequest('Design an onboarding screen for a meditation app').device, 'iphone')
+	assert.equal(classifyScreenRequest('Make a settings screen with account, notifications and privacy sections').kind, 'settings')
+	assert.equal(isNewScreenRequest('Design an onboarding screen for a meditation app', false), true)
+	assert.equal(isNewScreenRequest('Build a fintech dashboard for desktop', true), true)
+	assert.equal(isNewScreenRequest('make the cards less cramped and use a green accent', true), false)
+	assert.equal(isNewScreenRequest('switch everything to dark mode', true), false)
+	assert.equal(isNewScreenRequest('what do you think of the dashboard?', true), false)
+})

@@ -84,6 +84,8 @@ test('critique: reads the canvas (with an image for freehand ink) and annotates'
 	const boardState = {
 		count: 2,
 		shapes: [tree({ kind: 'user', name: 'Bob' }), { id: 'ink', type: 'draw', author: { kind: 'user', name: 'Bob' } }],
+		// The executor's measurement: the critique may only claim this.
+		audit: [{ id: 'mine_small_btn', screen: 'mine', kind: 'touch', detail: '"mine_small_btn" is 32px tall (under 44)' }],
 	}
 	const bob = new FakeClient((name) => {
 		if (name === 'get_canvas_state') return { ok: true, data: boardState }
@@ -143,7 +145,8 @@ test('mock builds a login screen and ends with a steering question', async () =>
 	assert.equal(create.args.device, 'iphone')
 	assert.ok(bob.toolCalls().some((c) => c.name === 'add_nodes'))
 	const says = bob.received.filter((m) => m.type === 'agent_say' && !m.ephemeral)
-	assert.ok(says.length >= 3)
+	assert.ok(says.length >= 2)
+	assert.ok(says.filter((m) => !/\?$/.test(m.text)).length <= 1, 'one status line, then the question')
 	assert.match(says.at(-1).text, /\?$/, 'last line is a question')
 })
 

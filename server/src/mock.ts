@@ -219,20 +219,45 @@ function dashboardScreen(): Spec {
 					'dash_content',
 					[
 						dashStats(),
-						card('dash_chart', [
+						row('dash_mid', [card('dash_chart', [
 							row('dash_chart_head', [
 								frame('dash_chart_titles', [txt('dash_chart_title', 'Revenue', { fontSize: 16, fontWeight: 600 }), muted('dash_chart_sub', 'Weekly, last 12 weeks', { fontSize: 13 })], { gap: 2, width: 'fill' }),
 								chip('dash_chart_range', 'Last 12 weeks', { fill: '$surfaceAlt', textColor: '$text' }),
 							], { width: 'fill' }),
-							{ id: 'dash_chart_plot', type: 'chart', chart: 'bar', height: 'fill', data: [8.2, 9.6, 8.9, 11.4, 10.6, 12.8, 12.1, 14.2, 11.8, 13.5, 15.9, 14.6], labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12'], prefix: '$', suffix: 'k' },
-						], { gap: 16, height: 'fill', padding: [20, 24, 20, 24] }),
+							{ id: 'dash_chart_plot', type: 'chart', chart: 'bar', height: 260, data: [8.2, 9.6, 8.9, 11.4, 10.6, 12.8, 12.1, 14.2, 11.8, 13.5, 15.9, 14.6], labels: ['W1', 'W2', 'W3', 'W4', 'W5', 'W6', 'W7', 'W8', 'W9', 'W10', 'W11', 'W12'], prefix: '$', suffix: 'k' },
+						], { gap: 16, padding: [20, 24, 20, 24] }), dashTopProducts()], { width: 'fill', gap: 24, alignItems: 'stretch' }),
 					],
-					{ width: 'fill', height: 'fill', gap: 24, alignItems: 'stretch' }
+					{ width: 'fill', gap: 24, alignItems: 'stretch' }
 				),
 			], { width: 'fill', height: 'fill', gap: 28, padding: [32, 40, 32, 40] }),
 		],
 	}
 }
+
+/** Beside the chart: best sellers with a share bar each, so the chart row has two panels. */
+const dashTopProducts = (): Spec =>
+	card('dash_top', [
+		row('dash_top_head', [txt('dash_top_title', 'Top products', { fontSize: 16, fontWeight: 600 }), muted('dash_top_period', 'This month', { fontSize: 13 })], { width: 'fill', justify: 'space-between' }),
+		{
+			id: 'dash_top_rows',
+			type: 'frame',
+			gap: 16,
+			template: frame('dash_top_item', [
+				row('dash_top_line', [
+					iconTile('dash_top_icon', '{icon}', 36, { radius: 10 }),
+					frame('dash_top_info', [txt('dash_top_name', '{name}', { fontSize: 14, fontWeight: 600 }), muted('dash_top_sold', '{sold}', { fontSize: 13 })], { gap: 2, width: 'fill' }),
+					txt('dash_top_rev', '{rev}', { fontSize: 14, fontWeight: 600 }),
+				], { width: 'fill', gap: 12 }),
+				row('dash_top_bar', [{ id: 'dash_top_bar_on', type: 'rect', width: '{on}' as any, height: 6, radius: 3, fill: '$primary' }, { id: 'dash_top_bar_off', type: 'rect', width: 'fill', height: 6, radius: 3, fill: '$surfaceAlt' }], { width: 'fill', gap: 0, padding: [0, 0, 0, 48] }),
+			], { gap: 8 }),
+			items: [
+				{ icon: 'package', name: 'Linen tote', sold: '412 sold', rev: '$12,360', on: 180 },
+				{ icon: 'star', name: 'Ceramic mug set', sold: '298 sold', rev: '$8,940', on: 132 },
+				{ icon: 'heart', name: 'Candle trio', sold: '241 sold', rev: '$6,025', on: 96 },
+				{ icon: 'cart', name: 'Gift card', sold: '188 sold', rev: '$4,700', on: 70 },
+			],
+		},
+	], { width: 340, gap: 20, padding: [20, 24, 20, 24] })
 
 const dashActivity = (): Spec =>
 	card('dash_activity', [
@@ -254,22 +279,23 @@ const dashActivity = (): Spec =>
 				], { width: 'fill', gap: 12 }),
 				frame('dash_row_status_cell', [chip('dash_row_status', '{status}', { fill: '{bg}', textColor: '{fg}' })], { width: 120 }),
 				txt('dash_row_amount', '{amount}', { fontSize: 15, fontWeight: 600, width: 96, align: 'right' }),
-			], { width: 'fill', gap: 16, padding: [10, 0, 10, 0] }),
+			], { width: 'fill', gap: 16, padding: [8, 0, 8, 0] }),
 			items: [
 				{ who: 'Maya Chen', what: 'Order #1042 · 3 items', amount: '$128.00', status: 'Paid', bg: '$successSoft', fg: '$success' },
 				{ who: 'Leo Park', what: 'Order #1041 · 1 item', amount: '$54.90', status: 'Pending', bg: '$warningSoft', fg: '$warning' },
 				{ who: 'Sam Ortiz', what: 'Order #1040 · 2 items', amount: '$87.50', status: 'Paid', bg: '$successSoft', fg: '$success' },
 				{ who: 'Ines Duarte', what: 'Order #1039 · 4 items', amount: '$212.30', status: 'Refunded', bg: '$dangerSoft', fg: '$danger' },
+				{ who: 'Noah Reid', what: 'Order #1038 · 2 items', amount: '$64.00', status: 'Paid', bg: '$successSoft', fg: '$success' },
 			],
 		},
-	], { gap: 8, padding: [20, 24, 12, 24] })
+	], { gap: 4, padding: [20, 24, 8, 24] })
 
 function landingScreen(): Spec {
 	return {
 		id: 'landing',
 		name: 'Landing page',
 		device: 'desktop',
-		height: 2000,
+		height: 2600,
 		layout: 'vertical',
 		gap: 0,
 		padding: 0,
@@ -290,11 +316,25 @@ function landingScreen(): Spec {
 					muted('landing_note', 'Free for teams up to 3 · No credit card required', { fontSize: 13 }),
 					landingProductShot(),
 				],
-				{ width: 'fill', gap: 24, alignItems: 'center', padding: [80, 80, 0, 80] }
+				{ width: 'fill', gap: 24, alignItems: 'center', padding: [48, 80, 0, 80] }
 			),
 			frame('landing_logos', [
 				muted('landing_logos_title', 'Trusted by product teams at', { fontSize: 14, fontWeight: 500 }),
-				{ id: 'landing_logos_row', type: 'frame', layout: 'horizontal', width: 'hug', gap: 64, template: txt('landing_logo_name', '{n}', { fontSize: 22, fontWeight: 700, textColor: '$muted' }), items: ['Northwind', 'Lumen', 'Pioneer', 'Halcyon', 'Vertex'].map((n) => ({ n })) },
+				{
+					id: 'landing_logos_row',
+					type: 'frame',
+					layout: 'horizontal',
+					width: 'hug',
+					gap: 56,
+					template: row('landing_logo', [{ id: 'landing_logo_mark', type: 'icon', icon: '{icon}', width: 28, height: 28, radius: 8, fill: '$surfaceAlt', textColor: '$muted' }, txt('landing_logo_name', '{n}', { fontSize: 19, fontWeight: 700, textColor: '$muted' })], { width: 'hug', gap: 10 }),
+					items: [
+						{ n: 'Northwind', icon: 'target' },
+						{ n: 'Lumen', icon: 'sun' },
+						{ n: 'Pioneer', icon: 'zap' },
+						{ n: 'Halcyon', icon: 'globe' },
+						{ n: 'Vertex', icon: 'layers' },
+					],
+				},
 			], { width: 'fill', gap: 20, alignItems: 'center', padding: [72, 80, 0, 80] }),
 		],
 	}
@@ -373,6 +413,25 @@ const landingFeatures = (): Spec =>
 			],
 		},
 	], { width: 'fill', gap: 48, alignItems: 'center', padding: [96, 80, 72, 80] })
+
+/** Social proof between the features and the closing CTA. */
+const landingTestimonial = (): Spec =>
+	frame('landing_quote_wrap', [
+		card('landing_quote', [
+			{ id: 'landing_quote_stars', type: 'frame', layout: 'horizontal', width: 'hug', gap: 4, template: { id: 'landing_star', type: 'icon', icon: 'star', width: 20, height: 20, textColor: '$warning' }, items: [{}, {}, {}, {}, {}] },
+			txt('landing_quote_text', '"We went from a napkin sketch to a reviewed flow in one meeting. Acme is the first tool our PMs and engineers both open every day."', { fontSize: 24, fontWeight: 500, align: 'center', width: 'fill' }),
+			row('landing_quote_who', [
+				{ id: 'landing_quote_avatar', type: 'avatar', text: 'Priya Nair', width: 44, height: 44 },
+				frame('landing_quote_info', [txt('landing_quote_name', 'Priya Nair', { fontSize: 16, fontWeight: 600 }), muted('landing_quote_role', 'Head of Design, Northwind', { fontSize: 14 })], { gap: 2, width: 'hug' }),
+			], { width: 'hug', gap: 12 }),
+		], { width: 880, gap: 24, padding: [40, 56, 40, 56], radius: 24, alignItems: 'center' }),
+	], { width: 'fill', alignItems: 'center', padding: [0, 80, 72, 80] })
+
+const landingFooter = (): Spec =>
+	row('landing_footer', [
+		row('landing_footer_brand', [iconTile('landing_footer_logo', 'sparkle', 28, { fill: '$primary', radius: 8 }), muted('landing_footer_copy', '© 2026 Acme Inc.', { fontSize: 13 })], { width: 'hug', gap: 12 }),
+		{ id: 'landing_footer_links', type: 'frame', layout: 'horizontal', width: 'hug', gap: 28, template: muted('landing_footer_link', '{t}', { fontSize: 13, fontWeight: 500 }), items: [{ t: 'Privacy' }, { t: 'Terms' }, { t: 'Status' }, { t: 'Contact' }] },
+	], { width: 'fill', justify: 'space-between', padding: [28, 80, 40, 80] })
 
 const landingCta = (): Spec =>
 	frame('landing_cta_band', [
@@ -695,7 +754,7 @@ export class MockProvider implements LLMProvider {
 	private critique(trigger: string, step: number, lastTool: ChatMessage | undefined): Completion {
 		const idle = trigger.startsWith('[trigger:idle]')
 		if (step === 0) {
-			return { text: 'Let me critique what is on the canvas.', toolCalls: [call('get_canvas_state', {})] }
+			return { text: 'Let me critique what is on the canvas.', toolCalls: [call('get_canvas_state', { audit: true })] }
 		}
 		if (step === 1) {
 			const all = parseScreens(lastTool)
@@ -724,8 +783,18 @@ export class MockProvider implements LLMProvider {
 			const who = owner ? `${owner}, ` : ''
 			const title = focus?.node ?? titleNode(screen) ?? screen
 			const nodes = descendants(screen)
-			const tinyText = nodes.find((x) => x.type === 'text' && Number(x.raw?.fontSize) > 0 && Number(x.raw?.fontSize) < 13)
-			const smallBtn = nodes.find((x) => x.type === 'button' && Number(x.raw?.h ?? x.raw?.height) > 0 && Number(x.raw?.h ?? x.raw?.height) < 44)
+			// Only measured problems are claimed (the executor's audit), never guessed ones.
+			let audit: { id: string; screen: string; kind: string; detail: string }[] = []
+			try {
+				audit = JSON.parse(textOf(lastTool!)).audit ?? []
+			} catch {}
+			const issue = audit.find((i) => i.screen === screen.id && nodes.some((x) => x.id === i.id) && ['touch', 'small_text', 'contrast', 'clipped'].includes(i.kind))
+			const ISSUE_TEXT: Record<string, [string, string]> = {
+				touch: ['This button is under 44 pixels tall, which is hard to tap on a phone.', ' The button looks a bit small to tap, though.'],
+				small_text: ['This text is under 12 pixels and may be hard to read.', ' That small text may be hard to read.'],
+				contrast: ['This text has low contrast against its background.', ' That text has low contrast, though.'],
+				clipped: ['This label is clipped: it needs a wider box or shorter copy.', ' One label is clipped, though.'],
+			}
 			const btn = primaryButton(screen)
 			const praiseText = focus
 				? `Your change to ${title.text ? `"${title.text}"` : `the ${title.type}`} fits the rest of the screen well.`
@@ -737,19 +806,19 @@ export class MockProvider implements LLMProvider {
 				call('add_comment', { id: 'review_praise', targetShapeId: title.id, kind: 'praise', text: praiseText, addressedTo: owner }),
 			]
 			let spoken = focus ? `${who}nice touch on the ${title.type === 'text' ? 'copy' : title.type}. It reads clearly.` : `${who}nice work. The title is clear and easy to find.`
-			const flagged = smallBtn ?? (tinyText ? tinyText : undefined)
-			if (flagged) {
+			const flagged = issue ? nodes.find((x) => x.id === issue.id) : undefined
+			if (flagged && issue) {
 				toolCalls.push(
 					call('highlight_shapes', { id: 'review_hl_issue', shapeIds: [flagged.id], color: 'orange' }),
 					call('add_comment', {
 						id: 'review_issue',
 						targetShapeId: flagged.id,
 						kind: 'issue',
-						text: flagged.type === 'button' ? 'This button is under 44 pixels tall, which is hard to tap on a phone.' : 'This text is smaller than 13 pixels and may be hard to read.',
+						text: ISSUE_TEXT[issue.kind][0],
 						addressedTo: owner,
 					})
 				)
-				spoken += flagged.type === 'button' ? ' The button looks a bit small to tap, though.' : ' That small text may be hard to read.'
+				spoken += ISSUE_TEXT[issue.kind][1]
 			} else {
 				const target = btn ?? mainContent(screen)
 				toolCalls.push(
@@ -807,12 +876,12 @@ export class MockProvider implements LLMProvider {
 				if (step === 0) return { text: 'Here is a simple sign-up screen with the essentials only.', toolCalls: [call('create_screen', signupScreen()), call('focus_view', { shapeIds: ['signup'], scope: 'requester' })] }
 				return step === 1 ? { text: 'Should sign-up ask for a phone number too, or keep it to email?', toolCalls: [] } : none
 			case 'dashboard':
-				if (step === 0) return { text: 'Starting a dashboard with a header, three key stats and a revenue chart.', toolCalls: [call('create_screen', dashboardScreen())] }
+				if (step === 0) return { text: 'Starting a dashboard with a header, four key stats, a revenue chart and top products.', toolCalls: [call('create_screen', dashboardScreen())] }
 				if (step === 1) return { text: 'Now a recent activity list under the chart.', toolCalls: [call('add_nodes', { parentId: 'dash_content', nodes: [dashActivity()] }), call('focus_view', { shapeIds: ['dashboard'], scope: 'requester' })] }
 				return step === 2 ? { text: 'Should the dashboard lead with revenue, or something else like active users?', toolCalls: [] } : none
 			case 'landing':
 				if (step === 0) return { text: 'Here is a landing page with a nav bar and a bold hero.', toolCalls: [call('create_screen', landingScreen())] }
-				if (step === 1) return { text: 'And a row of three feature cards below the hero.', toolCalls: [call('add_nodes', { parentId: 'landing', nodes: [landingFeatures(), frame('landing_cta_wrap', [landingCta()], { padding: [0, 80, 80, 80] })] }), call('focus_view', { shapeIds: ['landing'], scope: 'requester' })] }
+				if (step === 1) return { text: 'And feature cards, a customer quote and a closing call to action below the hero.', toolCalls: [call('add_nodes', { parentId: 'landing', nodes: [landingFeatures(), landingTestimonial(), frame('landing_cta_wrap', [landingCta()], { padding: [0, 80, 32, 80] }), landingFooter()] }), call('focus_view', { shapeIds: ['landing'], scope: 'requester' })] }
 				return step === 2 ? { text: 'Want a pricing section next, or testimonials?', toolCalls: [] } : none
 			case 'onboarding':
 				if (step === 0) return { text: 'First onboarding step: an illustration, a short headline and a Next button.', toolCalls: [call('create_screen', onboardingScreen(1, 'Plan trips together', 'Invite friends and build an itinerary in one shared place.'))] }
@@ -842,12 +911,13 @@ export class MockProvider implements LLMProvider {
 			const kind = edit.what === 'generic' ? 'signup' : edit.what
 			const spec = { login: loginScreen, signup: signupScreen, dashboard: dashboardScreen, landing: landingScreen, settings: settingsScreen, onboarding: () => onboardingScreen(1, 'Welcome', 'Let us get you set up.') }[kind]!()
 			const calls = [call('create_screen', spec)]
-			let spoken = `Here is the new ${spec.name} screen.`
+			let spoken = `Here is the new ${spec.name} screen`
 			if (from && from.id !== spec.id) {
 				const link = descendants(from).find((x) => /signup_link|_link$/.test(x.id)) ?? primaryButton(from)
 				calls.push(call('connect_screens', { id: `flow_${from.id}_${spec.id}`, fromId: link?.id ?? from.id, toId: spec.id, label: kind === 'signup' ? 'Sign up' : 'Next' }))
-				spoken += ' I connected it to the previous screen.'
+				spoken += ', and I connected it to the previous screen'
 			}
+			spoken += '.'
 			calls.push(call('focus_view', { shapeIds: from ? [from.id, spec.id] : [spec.id], scope: 'requester' }))
 			return { text: spoken, toolCalls: calls }
 		}

@@ -258,6 +258,7 @@ export const READING_TOOLS: ToolDef[] = [
 				region,
 				shapeIds: { type: 'array', items: { type: 'string' }, description: 'Optional explicit screens/nodes/shapes to return' },
 				author: { type: 'string', enum: ['any', 'user', 'agent'], default: 'any' },
+				audit: { type: 'boolean', description: 'Also return "audit": measured problems per screen (overflow, clipped text, contrast, touch targets, small text, unequal card heights). Critiques may only claim geometry/contrast problems listed there.' },
 			},
 		},
 	},

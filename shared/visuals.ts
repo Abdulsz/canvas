@@ -195,7 +195,7 @@ export function chartSvg(spec: ChartSpec, w: number, h: number, theme: Partial<T
 		peak = [pts[hl][0], pts[hl][1] - 10]
 	} else {
 		// Resting bars: a brand tint that still reads on the card (>= 2:1); the highlight is the full brand color.
-		const soft = tintWithContrast(primary, surface, dark ? 2 : 1.6, dark ? 0.55 : 0.68)
+		const soft = tintWithContrast(primary, surface, dark ? 2.4 : 1.6, dark ? 0.5 : 0.68)
 		const bw = Math.min(slot * 0.58, 44)
 		data.forEach((v, i) => {
 			const x = xCenter(i) - bw / 2
@@ -210,7 +210,10 @@ export function chartSvg(spec: ChartSpec, w: number, h: number, theme: Partial<T
 		peak = [xCenter(hl), yOf(data[hl]) - 8]
 	}
 	// Value label on the highlighted point.
-	const label = fmt(data[hl])
+	// The callout shows the exact value ($62,410) when it is short enough; the axis stays compact ($75k).
+	const v = data[hl]
+	const exact = Number.isInteger(v) && Math.abs(v) >= 1000 && Math.abs(v) < 1e6 ? `${spec.prefix ?? ''}${v.toLocaleString('en-US')}${spec.suffix ?? ''}` : ''
+	const label = exact && exact.length <= 9 ? exact : fmt(v)
 	const pw = label.length * 6.8 + 16
 	const px = Math.min(Math.max(peak[0] - pw / 2, x0), x1 - pw)
 	const py = Math.max(2, peak[1] - 22)
