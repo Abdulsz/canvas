@@ -80,14 +80,19 @@ function Bubble({ entry, mine, showName }: { entry: LogEntry; mine: boolean; sho
 	}
 	const agent = entry.kind === 'agent'
 	return (
-		<div className={`fade-up flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-			{showName && !mine && <span className="mb-0.5 ml-3 text-[11px] font-medium text-[var(--label-3)]">{entry.from}</span>}
+		<div className={`fade-up flex flex-col ${mine ? 'items-end' : 'items-start'} ${showName && mine ? 'mt-3' : ''}`}>
+			{showName && !mine && (
+				<span className="mb-1 ml-1 mt-1.5 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--label-2)]">
+					{agent ? <Orb state="idle" size={16} /> : null}
+					{entry.from}
+				</span>
+			)}
 			<div
-				className={`max-w-[86%] whitespace-pre-wrap rounded-[18px] px-3.5 py-2 text-[14px] leading-[1.35] ${
+				className={`max-w-[86%] whitespace-pre-wrap rounded-[16px] px-3.5 py-2 text-[14px] leading-[1.4] ${
 					mine
 						? 'rounded-br-[6px] bg-[var(--bubble-me)] text-[var(--on-accent)]'
 						: agent
-							? 'rounded-bl-[6px] bg-[var(--bubble-agent)] text-[var(--label)]'
+							? 'rounded-tl-[6px] bg-[var(--bubble-agent)] text-[var(--label)]'
 							: 'rounded-bl-[6px] bg-[var(--bubble-other)] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)]'
 				}`}
 			>
@@ -139,7 +144,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					</div>
 				</div>
 				<button
-					className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)] active:scale-95"
+					className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)] active:scale-95"
 					onClick={() => {
 						setMuted(!muted)
 						setMutedState(!muted)
@@ -284,10 +289,13 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					return <Bubble key={e.id} entry={e} mine={e.kind === 'user' && e.from === me.name} showName={!prev || prev.from !== e.from} />
 				})}
 				{state.busy && !state.speaking && (
-					<div className="fade-up flex w-fit items-center gap-1 rounded-[18px] rounded-bl-[6px] bg-[var(--bubble-agent)] px-3.5 py-3" aria-label={`${AGENT_NAME} is working`}>
-						{[0, 1, 2].map((d) => (
-							<span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--label-3)]" style={{ animationDelay: `${d * 140}ms` }} />
-						))}
+					<div className="fade-up flex w-fit items-center gap-2 rounded-[16px] rounded-tl-[6px] bg-[var(--bubble-agent)] px-3.5 py-2" aria-label={`${AGENT_NAME} is working`}>
+						<span className="voice-meter flex h-4 items-center gap-[3px]" data-phase="thinking" aria-hidden>
+							{[0, 1, 2].map((d) => (
+								<span key={d} className="voice-bar block w-[3px] rounded-full" style={{ animationDelay: `${d * 140}ms` }} />
+							))}
+						</span>
+						<span className="shimmer-text text-[13px]">{status}</span>
 					</div>
 				)}
 				{listenState === 'transcribing' && <div className="fade-up text-right text-[13px] italic text-[var(--label-3)]">Transcribing…</div>}
@@ -300,7 +308,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<button
 						type="button"
 						onClick={voice.toggleMic}
-						className={`relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${
+						className={`tap relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${
 							listening ? 'bg-[var(--red)] text-white' : 'bg-[var(--fill)] text-[var(--label)] hover:bg-[var(--fill-2)]'
 						}`}
 						title={listening ? 'Stop listening' : 'Talk to Grok'}

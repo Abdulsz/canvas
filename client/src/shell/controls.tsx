@@ -259,7 +259,7 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 					<ColorText value={value} onCommit={onCommit} label={label} />
 				</div>
 			</div>
-			<div className="flex flex-wrap items-center gap-[5px] pl-[70px]">
+			<div className="flex flex-wrap items-center gap-[2px] pl-[68px]">
 				{TOKENS.map((t) => {
 					const on = value === `$${t}`
 					return (
@@ -271,7 +271,7 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 							onClick={() => onCommit(`$${t}`)}
 							className={`rounded-full p-[1.5px] transition ${on ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 						>
-							<span className="block h-[14px] w-[14px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: resolveColor(`$${t}`, theme) }} />
+							<span className="block h-[13px] w-[13px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: resolveColor(`$${t}`, theme) }} />
 						</button>
 					)
 				})}
@@ -283,7 +283,7 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 						onClick={() => onCommit('transparent')}
 						className={`rounded-full p-[1.5px] transition ${value === 'transparent' ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 					>
-						<span className="relative block h-[14px] w-[14px] overflow-hidden rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]">
+						<span className="relative block h-[13px] w-[13px] overflow-hidden rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]">
 							<span className="absolute left-1/2 top-[-2px] h-[18px] w-px -translate-x-1/2 rotate-45 bg-[var(--red)]" />
 						</span>
 					</button>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useValue, type Editor, type TLShape, type TLShapeId } from 'tldraw'
 import type { CanvasExecutor } from '../agent/executor.ts'
-import { CaretIcon, CloseIcon } from '../components/icons.tsx'
+import { CaretIcon, CloseIcon, LayersIcon } from '../components/icons.tsx'
 import { bareId, isContainer, isUi, uiChildren } from '../design/tree.ts'
 import { selectAndReveal } from './actions.ts'
 import { KindIcon } from './KindIcon.tsx'
@@ -86,7 +86,7 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				role="treeitem"
 				aria-selected={isSel}
 				aria-expanded={layer.children.length ? open : undefined}
-				className={`group relative flex h-7 cursor-default select-none items-center gap-1 rounded-[6px] pr-2 text-[12px] ${
+				className={`layer-row group relative flex h-7 cursor-default select-none items-center gap-1 rounded-[6px] pr-2 text-[12px] ${
 					isSel
 						? 'bg-[color-mix(in_srgb,#0D99FF_16%,transparent)] text-[var(--label)]'
 						: inSel
@@ -161,7 +161,7 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				<div className="flex items-center gap-1">
 					{count > 0 && <span className="text-[11px] tabular-nums text-[var(--label-3)]">{layers.screens.length} {layers.screens.length === 1 ? 'screen' : 'screens'}</span>}
 					{onClose && (
-						<button className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--label-2)] hover:bg-[var(--fill)]" onClick={onClose} aria-label="Close layers">
+						<button className="tap flex h-7 w-7 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)]" onClick={onClose} aria-label="Close layers">
 							<CloseIcon className="h-3.5 w-3.5" />
 						</button>
 					)}
@@ -169,10 +169,12 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 			</div>
 			<div ref={listRef} className="scroll-soft min-h-0 flex-1 overflow-y-auto px-1.5 py-1.5" role="tree" aria-label="Layer tree" onPointerLeave={() => editor?.setHoveredShape(null)}>
 				{rows.length === 0 && layers.other.length === 0 && (
-					<div className="px-3 py-6 text-center text-[12px] leading-relaxed text-[var(--label-3)]">
-						No layers yet.
-						<br />
-						Insert a screen, or ask the agent to design one.
+					<div className="flex flex-col items-center px-4 py-8 text-center">
+						<span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[var(--fill-2)] text-[var(--label-2)]">
+							<LayersIcon className="h-4 w-4" />
+						</span>
+						<p className="mt-3 text-[12.5px] font-semibold text-[var(--label)]">No layers yet</p>
+						<p className="mt-1 text-[12px] leading-relaxed text-[var(--label-2)]">Insert a screen, or ask the agent to design one.</p>
 					</div>
 				)}
 				{rows.map(renderRow)}

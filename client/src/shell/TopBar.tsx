@@ -40,7 +40,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 		<header className="relative z-[500] flex h-12 shrink-0 items-center gap-2 px-2.5 md:px-3" data-testid="top-bar">
 			{/* Left: layers toggle (mobile), product mark, file name */}
 			<button
-				className={`flex h-8 w-8 items-center justify-center rounded-[8px] transition md:hidden ${layersOpen ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'text-[var(--label-2)] hover:bg-[var(--fill)]'}`}
+				className={`tap flex h-8 w-8 items-center justify-center rounded-[8px] transition md:hidden ${layersOpen ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'text-[var(--label-2)] hover:bg-[var(--fill)]'}`}
 				onClick={onToggleLayers}
 				aria-label="Layers"
 				aria-pressed={layersOpen}
@@ -67,7 +67,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 			<div className="flex flex-1 justify-center">
 				<div ref={insert.ref} className="relative">
 					<button
-						className={`flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition active:scale-[0.97] ${
+						className={`tap flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition active:scale-[0.97] ${
 							insert.open ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--card)] text-[var(--label)] shadow-[var(--shadow-control)] hover:bg-[var(--fill-2)]'
 						}`}
 						onClick={() => insert.setOpen(!insert.open)}
@@ -131,7 +131,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					))}
 				</div>
 				<button
-					className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)] hover:text-[var(--label)] disabled:opacity-35 disabled:hover:bg-transparent"
+					className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)] hover:text-[var(--label)] disabled:opacity-35 disabled:hover:bg-transparent"
 					disabled={!target}
 					onClick={() => target && void exec?.run('set_theme', { screenId: target.id, mode: target.mode === 'dark' ? 'light' : 'dark' })}
 					title={target ? `Switch “${target.name}” to ${target.mode === 'dark' ? 'light' : 'dark'} mode` : 'Theme (select a screen)'}
@@ -141,7 +141,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 				</button>
 				<div ref={exportMenu.ref} className="relative">
 					<button
-						className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-[var(--label)] transition hover:bg-[var(--fill)] disabled:opacity-35"
+						className="tap flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-[var(--label)] transition hover:bg-[var(--fill)] disabled:opacity-35"
 						onClick={() => exportMenu.setOpen(!exportMenu.open)}
 						disabled={!target}
 						aria-haspopup="menu"
@@ -175,7 +175,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					)}
 				</div>
 				<button
-					className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.97]"
+					className="tap flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.97]"
 					onClick={() => {
 						void navigator.clipboard?.writeText(location.href).catch(() => {})
 						setCopied(true)

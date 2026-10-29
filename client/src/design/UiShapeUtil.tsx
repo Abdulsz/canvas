@@ -13,10 +13,12 @@ import {
 	type TLShapeId,
 } from 'tldraw'
 import {
+	contrast,
 	DEFAULT_THEME,
 	ICON_PATHS,
 	initials,
 	isContainerKind,
+	letterSpacingFor,
 	LINE_HEIGHT,
 	resolveColor,
 	SHADOWS,
@@ -56,6 +58,24 @@ export function Icon({ name, size, color, strokeWidth = 2 }: { name: string; siz
 			<path d={ICON_PATHS[name] ?? ICON_PATHS.star} />
 		</svg>
 	)
+}
+
+/** Mixes two #rrggbb colors (t = 0 keeps a). */
+function mix(a: string, b: string, t: number): string {
+	const p = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16))
+	if (!/^#[0-9a-f]{6}$/i.test(a) || !/^#[0-9a-f]{6}$/i.test(b)) return a
+	const x = p(a)
+	const y = p(b)
+	return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')
+}
+
+/** Nudges a foreground toward white or black until it reads on `bg` (>= 4.5:1). */
+function legible(fg: string, bg: string): string {
+	if (!/^#[0-9a-f]{6}$/i.test(fg) || !/^#[0-9a-f]{6}$/i.test(bg) || contrast(fg, bg) >= 4.5) return fg
+	const toward = contrast('#ffffff', bg) > contrast('#000000', bg) ? '#ffffff' : '#000000'
+	let c = fg
+	for (let i = 1; i <= 10 && contrast(c, bg) < 4.5; i++) c = mix(fg, toward, i * 0.1)
+	return c
 }
 
 function ScreenLabel({ shape }: { shape: UiShape }) {
@@ -112,7 +132,9 @@ function UiView({ shape }: { shape: UiShape }) {
 		fontSize: p.fontSize,
 		fontWeight: p.fontWeight,
 		lineHeight: LINE_HEIGHT,
+		letterSpacing: letterSpacingFor(p.fontSize),
 	}
+	const bw = stroke !== 'transparent' ? p.strokeWidth : 0
 	let content: ReactNode = null
 	let style: CSSProperties = box
 
@@ -135,14 +157,19 @@ function UiView({ shape }: { shape: UiShape }) {
 			break
 		case 'button': {
 			const iconSize = Math.round(p.fontSize * 1.25)
+			// Solid buttons get a crisp contact shadow and a faint top highlight; outlined ones a hairline lift.
+			const solid = fill !== 'transparent' && stroke === 'transparent'
+			const lift = p.shadow !== 'none' ? box.boxShadow : solid ? '0 1px 2px rgba(15,17,28,.14), inset 0 1px 0 rgba(255,255,255,.14)' : fill !== 'transparent' ? '0 1px 2px rgba(15,17,28,.05)' : undefined
 			style = {
 				...box,
 				...textStyle,
+				boxShadow: lift,
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: p.align === 'left' ? 'flex-start' : p.align === 'right' ? 'flex-end' : 'center',
 				gap: 8,
-				padding: padding ? `0 ${padding[1]}px 0 ${padding[3]}px` : '0 24px',
+				// The border sits inside the box: take it out of the padding so hugged labels still fit.
+				padding: `0 ${Math.max(0, (padding?.[1] ?? 24) - bw)}px 0 ${Math.max(0, (padding?.[3] ?? 24) - bw)}px`,
 				whiteSpace: 'nowrap',
 			}
 			content = (
@@ -160,7 +187,7 @@ function UiView({ shape }: { shape: UiShape }) {
 				display: 'flex',
 				alignItems: 'center',
 				gap: 10,
-				padding: padding ? `0 ${padding[1]}px 0 ${padding[3]}px` : '0 16px',
+				padding: `0 ${Math.max(0, (padding?.[1] ?? 16) - bw)}px 0 ${Math.max(0, (padding?.[3] ?? 16) - bw)}px`,
 				whiteSpace: 'nowrap',
 			}
 			content = (
@@ -171,12 +198,21 @@ function UiView({ shape }: { shape: UiShape }) {
 			)
 			break
 		case 'image': {
-			const s = Math.max(16, Math.min(40, Math.min(p.w, p.h) * 0.28))
-			style = { ...box, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }
+			const s = Math.max(14, Math.min(28, Math.min(p.w, p.h) * 0.2))
+			// A placeholder that reads as "photo goes here": a soft brand-tinted wash and a glyph on a frosted disc.
+			const wash = p.fill === '$surfaceAlt' ? `linear-gradient(135deg, ${c('$primarySoft')} 0%, ${fill} 55%, ${fill} 100%)` : fill
+			const disc = Math.round(s * 2.2)
+			style = { ...box, background: wash, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }
 			content = (
 				<>
-					<Icon name={p.icon || 'image'} size={s} color={textColor} strokeWidth={1.5} />
-					{p.text && <span style={{ ...textStyle, fontSize: Math.min(p.fontSize, 13) }}>{p.text}</span>}
+					{Math.min(p.w, p.h) >= 40 ? (
+						<div style={{ width: disc, height: disc, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: theme.mode === 'dark' ? 'rgba(255,255,255,.06)' : 'rgba(255,255,255,.7)', boxShadow: theme.mode === 'dark' ? 'inset 0 0 0 1px rgba(255,255,255,.06)' : '0 1px 2px rgba(15,17,28,.06)' }}>
+							<Icon name={p.icon || 'image'} size={s} color={textColor} strokeWidth={1.75} />
+						</div>
+					) : (
+						<Icon name={p.icon || 'image'} size={s} color={textColor} strokeWidth={1.75} />
+					)}
+					{p.text && <span style={{ ...textStyle, fontSize: Math.min(p.fontSize, 13), fontWeight: 500 }}>{p.text}</span>}
 				</>
 			)
 			break
@@ -189,18 +225,25 @@ function UiView({ shape }: { shape: UiShape }) {
 			style = {
 				...box,
 				...textStyle,
+				color: legible(textColor, fill),
+				letterSpacing: 0.2,
 				fontSize: Math.max(10, Math.round(Math.min(p.w, p.h) * 0.38)),
 				borderRadius: '50%',
 				display: 'flex',
 				alignItems: 'center',
 				justifyContent: 'center',
-				letterSpacing: 0.3,
 			}
-			content = p.icon ? <Icon name={p.icon} size={Math.min(p.w, p.h) * 0.5} color={textColor} /> : initials(p.text || p.name) || '?'
+			content = p.icon ? <Icon name={p.icon} size={Math.min(p.w, p.h) * 0.5} color={legible(textColor, fill)} /> : initials(p.text || p.name) || '?'
 			break
 		case 'toggle': {
 			const knob = p.h - 4
-			style = { ...base, borderRadius: p.h / 2, background: p.checked ? fill : c('$border'), position: 'relative' }
+			style = {
+				...base,
+				borderRadius: p.h / 2,
+				background: p.checked ? fill : c('$surfaceAlt'),
+				boxShadow: p.checked ? undefined : `inset 0 0 0 1px ${c('$border')}`,
+				position: 'relative',
+			}
 			content = (
 				<div
 					style={{
@@ -211,7 +254,7 @@ function UiView({ shape }: { shape: UiShape }) {
 						height: knob,
 						borderRadius: '50%',
 						background: '#fff',
-						boxShadow: '0 1px 3px rgba(0,0,0,.25)',
+						boxShadow: '0 1px 2px rgba(0,0,0,.16), 0 2px 6px rgba(0,0,0,.10)',
 					}}
 				/>
 			)
@@ -235,7 +278,7 @@ function UiView({ shape }: { shape: UiShape }) {
 							justifyContent: 'center',
 						}}
 					>
-						{p.checked && <Icon name="check" size={14} color="#fff" strokeWidth={3} />}
+						{p.checked && <Icon name="check" size={14} color={c('$onPrimary')} strokeWidth={3} />}
 					</div>
 					{p.text && <span>{p.text}</span>}
 				</>

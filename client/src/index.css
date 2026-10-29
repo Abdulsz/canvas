@@ -1,14 +1,26 @@
 @import 'tailwindcss';
 @import 'tldraw/tldraw.css';
 
-/* Design tokens modeled on Apple's system colors and materials. */
+/*
+ * Shell tokens. Direction (ui-ux-pro-max): "Minimal Swiss" Inter-only type,
+ * flat surfaces + micro-interactions for a productivity/design tool, monochrome
+ * chrome with one accent family (the agent's violet) and Figma selection blue.
+ * Motion: 150ms for hovers/presses, 200-250ms for panels; all off under
+ * prefers-reduced-motion. Text pairs keep >= 4.5:1 in both appearances.
+ */
 :root {
-	--font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+	--font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', system-ui, sans-serif;
+	--font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+	--ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+	--agent-1: #6e56f8;
+	--agent-2: #b558f0;
+	--agent-glow: rgba(110, 86, 248, 0.28);
+	--fill-strong: rgba(120, 120, 128, 0.2);
 
-	--bg: #f5f5f7;
+	--bg: #f2f2f4;
 	--label: #1d1d1f;
-	--label-2: rgba(60, 60, 67, 0.72);
-	--label-3: rgba(60, 60, 67, 0.45);
+	--label-2: rgba(60, 60, 67, 0.82);
+	--label-3: rgba(60, 60, 67, 0.62);
 	--separator: rgba(60, 60, 67, 0.14);
 	--fill: rgba(120, 120, 128, 0.12);
 	--fill-2: rgba(120, 120, 128, 0.08);
@@ -32,10 +44,12 @@
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--bg: #000000;
+		--bg: #09090b;
+		--fill-strong: rgba(118, 118, 128, 0.36);
+		--agent-glow: rgba(140, 116, 255, 0.34);
 		--label: #f5f5f7;
-		--label-2: rgba(235, 235, 245, 0.7);
-		--label-3: rgba(235, 235, 245, 0.42);
+		--label-2: rgba(235, 235, 245, 0.78);
+		--label-3: rgba(235, 235, 245, 0.56);
 		--separator: rgba(84, 84, 88, 0.55);
 		--fill: rgba(118, 118, 128, 0.26);
 		--fill-2: rgba(118, 118, 128, 0.16);
@@ -68,9 +82,159 @@ body {
 	background: var(--bg);
 	color: var(--label);
 	font-family: var(--font-sans);
+	/* Inter's alternates for a crisper UI read (open digits, straight-sided l). */
+	font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
 	-webkit-font-smoothing: antialiased;
 	-moz-osx-font-smoothing: grayscale;
-	letter-spacing: -0.01em;
+	letter-spacing: -0.006em;
+}
+
+button {
+	cursor: pointer;
+}
+button:disabled {
+	cursor: default;
+}
+
+/* Touch: every primary control gets a 44px hit area on coarse pointers. */
+@media (pointer: coarse) {
+	.tap {
+		min-width: 44px;
+		min-height: 44px;
+	}
+}
+
+/* ---------------------------------------------------------------- voice dock
+ * The hero control. Idle: a calm glass pill. Listening: a red-tinted ring and a
+ * live mic meter. Designing: a turning gradient ring and shimmering caption.
+ * Speaking: violet glow and a dancing meter, in step with the orb. */
+.voice-dock {
+	box-shadow: var(--shadow-panel);
+	transition:
+		box-shadow 250ms var(--ease-out),
+		padding 250ms var(--ease-out);
+	isolation: isolate;
+}
+.voice-dock::before {
+	/* Gradient hairline ring, only visible while something is happening. */
+	content: '';
+	position: absolute;
+	inset: -1.5px;
+	border-radius: inherit;
+	padding: 1.5px;
+	background: conic-gradient(from var(--ring-angle, 0deg), var(--agent-1), var(--agent-2), #ff6b9a, #ffb547, var(--agent-1));
+	-webkit-mask:
+		linear-gradient(#000 0 0) content-box,
+		linear-gradient(#000 0 0);
+	-webkit-mask-composite: xor;
+	mask-composite: exclude;
+	opacity: 0;
+	transition: opacity 250ms var(--ease-out);
+	z-index: -1;
+	pointer-events: none;
+}
+.voice-dock[data-phase='thinking']::before,
+.voice-dock[data-phase='speaking']::before {
+	opacity: 1;
+	animation: ring-turn 2.4s linear infinite;
+}
+.voice-dock[data-phase='speaking'] {
+	box-shadow:
+		var(--shadow-panel),
+		0 8px 32px var(--agent-glow);
+}
+.voice-dock[data-phase='listening'],
+.voice-dock[data-phase='hearing'] {
+	box-shadow:
+		var(--shadow-panel),
+		0 0 0 1.5px color-mix(in srgb, var(--red) 55%, transparent),
+		0 8px 28px color-mix(in srgb, var(--red) 22%, transparent);
+}
+@property --ring-angle {
+	syntax: '<angle>';
+	inherits: false;
+	initial-value: 0deg;
+}
+@keyframes ring-turn {
+	to {
+		--ring-angle: 360deg;
+	}
+}
+.voice-phase {
+	color: var(--label-2);
+}
+.voice-dock[data-phase='speaking'] .voice-phase,
+.voice-dock[data-phase='thinking'] .voice-phase {
+	color: color-mix(in srgb, var(--agent-1) 80%, var(--label));
+}
+.voice-dock[data-phase='listening'] .voice-phase,
+.voice-dock[data-phase='hearing'] .voice-phase {
+	color: var(--red);
+}
+.voice-bar {
+	height: 6px;
+	background: var(--label-3);
+	transition: height 90ms linear;
+}
+.voice-meter[data-phase='listening'] .voice-bar,
+.voice-meter[data-phase='hearing'] .voice-bar {
+	background: var(--red);
+}
+.voice-meter[data-phase='speaking'] .voice-bar {
+	background: linear-gradient(180deg, var(--agent-2), var(--agent-1));
+	animation: bar-dance 900ms ease-in-out infinite;
+}
+.voice-meter[data-phase='thinking'] .voice-bar {
+	background: color-mix(in srgb, var(--agent-1) 70%, transparent);
+	animation: bar-wave 1.2s ease-in-out infinite;
+}
+@keyframes bar-dance {
+	0%,
+	100% {
+		height: 5px;
+	}
+	30% {
+		height: 18px;
+	}
+	60% {
+		height: 9px;
+	}
+}
+@keyframes bar-wave {
+	0%,
+	100% {
+		height: 4px;
+		opacity: 0.5;
+	}
+	50% {
+		height: 12px;
+		opacity: 1;
+	}
+}
+.voice-mic.is-on {
+	box-shadow: 0 4px 16px color-mix(in srgb, var(--red) 40%, transparent);
+}
+.voice-mic:not(.is-on) {
+	box-shadow:
+		0 1px 2px rgba(0, 0, 0, 0.14),
+		0 4px 14px rgba(0, 0, 0, 0.16);
+}
+/* Caption shimmer while the agent designs. */
+.shimmer-text {
+	background: linear-gradient(90deg, var(--label) 0%, var(--label) 40%, color-mix(in srgb, var(--agent-1) 70%, var(--label)) 50%, var(--label) 60%, var(--label) 100%);
+	background-size: 250% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent !important;
+	animation: shimmer 2.2s linear infinite;
+}
+@keyframes shimmer {
+	from {
+		background-position: 100% 0;
+	}
+	to {
+		background-position: -150% 0;
+	}
 }
 
 /* Frosted-glass material. */
@@ -143,7 +307,7 @@ body {
 /* In the base layer so utilities like outline-none can override it. */
 @layer base {
 	:focus-visible {
-		outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+		outline: 2px solid #0d99ff;
 		outline-offset: 2px;
 	}
 }
@@ -175,7 +339,7 @@ body {
 	--tl-color-selected: #f5f5f7;
 	--tl-color-selected-contrast: #000000;
 	--tl-color-focus: rgba(255, 255, 255, 0.4);
-	--tl-color-background: #1c1c1e;
+	--tl-color-background: #161618;
 	--tl-color-selection-stroke: #0d99ff;
 	--tl-color-selection-fill: rgba(13, 153, 255, 0.2);
 }
@@ -206,5 +370,11 @@ body {
 	}
 	.code-view .tok-str {
 		color: #5eead4;
+	}
+}
+
+@media (pointer: coarse) {
+	.layer-row {
+		height: 40px;
 	}
 }

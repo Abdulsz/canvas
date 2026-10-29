@@ -27,6 +27,7 @@ import { CanvasExecutor } from './agent/executor.ts'
 import { useAgent } from './agent/useAgent.ts'
 import { useVoice } from './agent/useVoice.ts'
 import { AgentPanel, ConfirmDialog, Orb } from './components/AgentPanel.tsx'
+import { EmptyCanvas } from './shell/EmptyCanvas.tsx'
 import { customShapeUtils, syncShapeUtils } from './design/shapes.ts'
 import { isUi } from './design/tree.ts'
 import type { Identity } from './identity.ts'
@@ -141,7 +142,7 @@ const themes: Partial<TLThemes> = {
 		...DEFAULT_THEME,
 		colors: {
 			light: { ...DEFAULT_THEME.colors.light, background: '#ebebed', selectionStroke: SELECTION, selectionFill: 'rgba(13, 153, 255, 0.14)' },
-			dark: { ...DEFAULT_THEME.colors.dark, background: '#1c1c1e', selectionStroke: SELECTION, selectionFill: 'rgba(13, 153, 255, 0.2)' },
+			dark: { ...DEFAULT_THEME.colors.dark, background: '#161618', selectionStroke: SELECTION, selectionFill: 'rgba(13, 153, 255, 0.2)' },
 		},
 	},
 }
@@ -233,6 +234,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 							}}
 						/>
 					</AgentCursorContext.Provider>
+					<EmptyCanvas editor={editor} exec={userExec} voice={voice} connected={agent.state.connected} busy={agent.state.busy} />
 					<VoiceDock state={agent.state} voice={voice} onOpenAgent={() => setTab('agent')} onStop={agent.actions.stop} />
 				</div>
 
@@ -244,7 +246,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 								key={t}
 								role="tab"
 								aria-selected={tab === t}
-								className={`relative flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] transition ${
+								className={`tap relative flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] transition ${
 									tab === t ? 'bg-[var(--fill)] font-semibold text-[var(--label)]' : 'font-medium text-[var(--label-2)] hover:text-[var(--label)]'
 								}`}
 								onClick={() => setTab(t)}

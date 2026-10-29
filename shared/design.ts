@@ -166,19 +166,19 @@ export const KIND_DEFAULTS: Record<UiKind, KindDefault> = {
 	frame: { props: { w: 200, h: 100, fill: 'transparent' }, sizing: { w: 'fill', h: 'hug' }, layout: vstack(12, 0) },
 	text: { props: { w: 100, h: 22, textColor: '$text', fontSize: 16, fontWeight: 400 }, sizing: { w: 'hug', h: 'hug' } },
 	button: {
-		props: { w: 120, h: 48, fill: '$primary', textColor: '$onPrimary', radius: 10, fontSize: 16, fontWeight: 600, align: 'center' },
+		props: { w: 120, h: 48, fill: '$primary', textColor: '$onPrimary', radius: 12, fontSize: 16, fontWeight: 600, align: 'center' },
 		sizing: { w: 'hug', h: 'fixed' },
 		layout: { mode: 'horizontal', gap: 8, padding: [0, 24, 0, 24], alignItems: 'center', justify: 'center' },
 	},
 	input: {
-		props: { w: 280, h: 48, fill: '$surface', stroke: '$border', strokeWidth: 1, textColor: '$muted', radius: 10, fontSize: 16 },
+		props: { w: 280, h: 48, fill: '$surface', stroke: '$border', strokeWidth: 1, textColor: '$muted', radius: 12, fontSize: 16 },
 		sizing: { w: 'fill', h: 'fixed' },
-		layout: { mode: 'horizontal', gap: 10, padding: [0, 16, 0, 16], alignItems: 'center', justify: 'start' },
+		layout: { mode: 'horizontal', gap: 12, padding: [0, 16, 0, 16], alignItems: 'center', justify: 'start' },
 	},
-	image: { props: { w: 300, h: 160, fill: '$surfaceAlt', textColor: '$muted', radius: 12 }, sizing: { w: 'fill', h: 'fixed' } },
+	image: { props: { w: 300, h: 160, fill: '$surfaceAlt', textColor: '$muted', radius: 16 }, sizing: { w: 'fill', h: 'fixed' } },
 	icon: { props: { w: 24, h: 24, textColor: '$text', icon: 'star' }, sizing: { w: 'fixed', h: 'fixed' } },
-	avatar: { props: { w: 40, h: 40, fill: '$primary', textColor: '$onPrimary', fontSize: 15, fontWeight: 600 }, sizing: { w: 'fixed', h: 'fixed' } },
-	toggle: { props: { w: 44, h: 24, fill: '$primary', checked: true }, sizing: { w: 'fixed', h: 'fixed' } },
+	avatar: { props: { w: 40, h: 40, fill: '$primarySoft', textColor: '$primary', fontSize: 15, fontWeight: 600 }, sizing: { w: 'fixed', h: 'fixed' } },
+	toggle: { props: { w: 48, h: 28, fill: '$primary', checked: true }, sizing: { w: 'fixed', h: 'fixed' } },
 	checkbox: { props: { w: 120, h: 22, fill: '$primary', textColor: '$text', fontSize: 15 }, sizing: { w: 'hug', h: 'hug' } },
 	divider: { props: { w: 100, h: 1, fill: '$border' }, sizing: { w: 'fill', h: 'fixed' } },
 	rect: { props: { w: 100, h: 100, fill: '$surfaceAlt', radius: 8 }, sizing: { w: 'fixed', h: 'fixed' } },
@@ -196,29 +196,39 @@ export type Device = keyof typeof DEVICES
 export const DEFAULT_PRIMARY = '#5b5bd6'
 export const DEFAULT_THEME: ThemeSpec = { mode: 'light', primary: DEFAULT_PRIMARY }
 
-export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'onPrimary', 'text', 'muted', 'border'] as const
+export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'primarySoft', 'onPrimary', 'text', 'muted', 'border', 'success', 'danger'] as const
 export type Token = (typeof TOKENS)[number]
 
+// Refined neutrals (a faint cool cast, never pure gray on gray). Light: an
+// off-white canvas with pure-white cards so surfaces separate without heavy
+// borders. Dark: layered near-blacks, each surface a clear step lighter.
+// $muted keeps >= 4.5:1 on $bg and $surface in both modes.
 export const THEMES: Record<ThemeMode, Record<Token, string>> = {
 	light: {
-		bg: '#ffffff',
+		bg: '#f7f7f9',
 		surface: '#ffffff',
-		surfaceAlt: '#f1f2f4',
+		surfaceAlt: '#eff0f3',
 		primary: DEFAULT_PRIMARY,
+		primarySoft: '#ececfb',
 		onPrimary: '#ffffff',
-		text: '#111827',
-		muted: '#6b7280',
-		border: '#e2e4e9',
+		text: '#0e0f13',
+		muted: '#62646f',
+		border: '#e3e4e9',
+		success: '#15803d',
+		danger: '#dc2626',
 	},
 	dark: {
-		bg: '#0f1115',
-		surface: '#181b21',
-		surfaceAlt: '#22262e',
+		bg: '#0b0c0f',
+		surface: '#15161b',
+		surfaceAlt: '#1e2027',
 		primary: DEFAULT_PRIMARY,
+		primarySoft: '#1f2040',
 		onPrimary: '#ffffff',
-		text: '#f3f4f6',
-		muted: '#9ca3af',
-		border: '#2f343d',
+		text: '#f4f4f6',
+		muted: '#9b9daa',
+		border: '#272932',
+		success: '#4ade80',
+		danger: '#f87171',
 	},
 }
 
@@ -231,6 +241,8 @@ export function resolveColor(value: string | undefined, theme: Partial<ThemeSpec
 		const mode = theme.mode === 'dark' ? 'dark' : 'light'
 		const primary = themePrimary(theme)
 		if (key === 'primary') return primary
+		// A quiet tint of the brand for icon tiles, chips and avatars.
+		if (key === 'primarySoft') return parseHex(primary) ? mixHex(primary, THEMES[mode].surface, mode === 'dark' ? 0.84 : 0.88) : THEMES[mode].primarySoft
 		// Text on the brand color: white, or near-black when the brand is light (yellow, mint...).
 		if (key === 'onPrimary') return contrast(primary, '#ffffff') >= 3 ? THEMES[mode].onPrimary : '#111827'
 		return THEMES[mode][key as Token]
@@ -325,6 +337,18 @@ export const ICON_PATHS: Record<string, string> = {
 	clock: 'M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0z M12 6v6l4 2',
 	'credit-card': 'M3 4h18a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M1 10h22',
 	gift: 'M20 12v10H4V12 M2 7h20v5H2z M12 22V7 M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z',
+	sparkle: 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z',
+	zap: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z',
+	'trending-up': 'M23 6l-9.5 9.5-5-5L1 18 M17 6h6v6',
+	'arrow-up-right': 'M7 17L17 7 M7 7h10v10',
+	'arrow-down-right': 'M7 7l10 10 M17 7v10H7',
+	users: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M13 7a4 4 0 1 1-8 0a4 4 0 1 1 8 0z M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
+	package: 'M16.5 9.4l-9-5.19 M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96L12 12.01l8.73-5.05 M12 22.08V12',
+	layers: 'M12 2L2 7l10 5 10-5-10-5z M2 17l10 5 10-5 M2 12l10 5 10-5',
+	grid: 'M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z',
+	shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+	moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+	sun: 'M17 12a5 5 0 1 1-10 0a5 5 0 1 1 10 0z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42',
 }
 export const ICONS = Object.keys(ICON_PATHS)
 
@@ -768,12 +792,16 @@ export const initials = (s: string) =>
 		.map((w) => w[0]!.toUpperCase())
 		.join('')
 
+// Soft, layered elevation: a crisp contact shadow plus a wide ambient one.
 export const SHADOWS: Record<UiShadow, string> = {
 	none: 'none',
-	sm: '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10)',
-	md: '0 4px 8px -2px rgba(16,24,40,.10), 0 2px 4px -2px rgba(16,24,40,.06)',
-	lg: '0 20px 24px -4px rgba(16,24,40,.10), 0 8px 8px -4px rgba(16,24,40,.04)',
+	sm: '0 1px 2px rgba(15,17,28,.05), 0 2px 8px -2px rgba(15,17,28,.06)',
+	md: '0 1px 3px rgba(15,17,28,.06), 0 8px 24px -6px rgba(15,17,28,.12)',
+	lg: '0 2px 6px rgba(15,17,28,.06), 0 24px 48px -12px rgba(15,17,28,.18)',
 }
+
+/** Display type tracks tighter (Inter): -0.02em at 24px+, -0.01em at 18px+. */
+export const letterSpacingFor = (fontSize: number) => (fontSize >= 24 ? '-0.02em' : fontSize >= 18 ? '-0.01em' : 'normal')
 
 // ------------------------------------------------------------- HTML export
 
@@ -821,6 +849,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 		if (p.opacity !== 1) s.push(`opacity: ${p.opacity}`)
 		if (['text', 'button', 'input', 'checkbox', 'avatar'].includes(p.kind)) {
 			s.push(`color: ${cssColor(p.textColor)}`, `font-size: ${p.fontSize}px`, `font-weight: ${p.fontWeight}`, `line-height: ${LINE_HEIGHT}`)
+			if (letterSpacingFor(p.fontSize) !== 'normal') s.push(`letter-spacing: ${letterSpacingFor(p.fontSize)}`)
 			if (p.kind === 'text') s.push(`text-align: ${p.align}`, 'margin: 0')
 		}
 		if (p.kind === 'screen') s.push('overflow: hidden', 'box-sizing: border-box')
@@ -862,12 +891,12 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 <style>
 :root { ${vars} }
 * { box-sizing: border-box; }
-body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #e9eaee; font-family: Inter, system-ui, -apple-system, sans-serif; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #e9eaee; font-family: Inter, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
 button { border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; }
 label { display: flex; align-items: center; gap: 10px; }
-input[role="switch"] { appearance: none; position: relative; border-radius: 999px; background: var(--border); margin: 0; }
-input[role="switch"]:checked { background: var(--primary); }
-input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(100% / 2 - 4px); aspect-ratio: 1; height: calc(100% - 4px); border-radius: 50%; background: #fff; transition: left .15s; }
+input[role="switch"] { appearance: none; position: relative; border-radius: 999px; background: var(--surfaceAlt); box-shadow: inset 0 0 0 1px var(--border); margin: 0; }
+input[role="switch"]:checked { background: var(--primary); box-shadow: none; }
+input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(100% / 2 - 4px); aspect-ratio: 1; height: calc(100% - 4px); border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: left .15s; }
 input[role="switch"]:checked::after { left: calc(100% - (100% / 2 - 4px) - 2px); }
 </style>
 </head>

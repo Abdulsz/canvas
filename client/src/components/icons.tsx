@@ -77,3 +77,5 @@ export const CopyIcon = ico('M5.5 5.5h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-7a1 1 0 0
 export const ArrowDownIcon = ico('M8 2.5v11 M4 9.5l4 4 4-4')
 export const ArrowRightIcon = ico('M2.5 8h11 M9.5 4l4 4-4 4')
 export const FileIcon = ico('M4 1.5h5l3.5 3.5v9a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V2a.5.5 0 0 1 .5-.5z M9 1.5V5h3.5')
+export const GridIcon = ico('M2.5 2.5h4.5v4.5H2.5z M9 2.5h4.5v4.5H9z M9 9h4.5v4.5H9z M2.5 9h4.5v4.5H2.5z')
+export const BrowserIcon = ico('M2.5 2.5h11a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z M1.5 5.5h13')

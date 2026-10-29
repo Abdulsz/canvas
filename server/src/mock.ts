@@ -44,6 +44,39 @@ const COLORS: Record<string, string> = {
 }
 
 // ------------------------------------------------------------------ screens
+//
+// Drafts follow one system: 8pt spacing (8/16/24/32/48), Inter type scale
+// 13/14/16/20/28-32/56-64, labelled form fields, $surface cards on the
+// off-white $bg, brand tints ($primarySoft) for icon tiles, chips and avatars.
+
+/** A field with a visible label above the input (no placeholder-only labels). */
+const field = (id: string, label: string, input: Spec): Spec =>
+	frame(`${id}_field`, [txt(`${id}_label`, label, { fontSize: 14, fontWeight: 500 }), { id, type: 'input', ...input }], { gap: 8, name: `${label} field` })
+
+/** A square icon tile: brand-tinted background, brand glyph. */
+const iconTile = (id: string, icon: string, size = 40, extra: Spec = {}): Spec =>
+	frame(id, [{ id: `${id}_glyph`, type: 'icon', icon, textColor: extra.fill === '$primary' ? '$onPrimary' : '$primary', width: Math.round(size / 2), height: Math.round(size / 2) }], {
+		width: size,
+		height: size,
+		fill: '$primarySoft',
+		radius: Math.round(size / 3.5),
+		alignItems: 'center',
+		justify: 'center',
+		...extra,
+	})
+
+/** A small rounded chip (eyebrows, deltas, tags). */
+const chip = (id: string, text: string, extra: Spec = {}, icon?: string): Spec =>
+	row(id, [...(icon ? [{ id: `${id}_icon`, type: 'icon', icon, textColor: extra.textColor ?? '$primary', width: 14, height: 14 }] : []), txt(`${id}_text`, text, { fontSize: 13, fontWeight: 600, textColor: extra.textColor ?? '$primary' })], {
+		width: 'hug',
+		gap: 6,
+		padding: [6, 12, 6, 12],
+		radius: 999,
+		fill: '$primarySoft',
+		...extra,
+	})
+
+const card = (id: string, children: Spec[], extra: Spec = {}): Spec => frame(id, children, { width: 'fill', gap: 16, padding: 24, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16, ...extra })
 
 function loginScreen(): Spec {
 	return {
@@ -51,33 +84,28 @@ function loginScreen(): Spec {
 		name: 'Login',
 		device: 'iphone',
 		layout: 'vertical',
-		gap: 16,
-		padding: [64, 24, 32, 24],
+		gap: 24,
+		padding: [72, 24, 40, 24],
 		alignItems: 'stretch',
 		children: [
 			frame(
 				'login_content',
 				[
 					frame('login_header', [
-						frame('login_logo', [{ id: 'login_logo_icon', type: 'icon', icon: 'lock', textColor: '$onPrimary' }], {
-							width: 64,
-							height: 64,
-							fill: '$primary',
-							radius: 16,
-							alignItems: 'center',
-							justify: 'center',
-						}),
-						txt('login_title', 'Welcome back', { fontSize: 32, fontWeight: 700 }),
-						muted('login_subtitle', 'Log in to pick up where you left off.', { fontSize: 16 }),
-					], { gap: 8 }),
+						iconTile('login_logo', 'sparkle', 56, { fill: '$primary', radius: 16 }),
+						frame('login_heading', [txt('login_title', 'Welcome back', { fontSize: 30, fontWeight: 700 }), muted('login_subtitle', 'Log in to pick up where you left off.', { fontSize: 16 })], { gap: 8 }),
+					], { gap: 24 }),
 					frame('login_form', [
-						{ id: 'login_email', type: 'input', icon: 'mail', text: 'Email address' },
-						{ id: 'login_password', type: 'input', icon: 'lock', text: 'Password' },
-						muted('login_forgot', 'Forgot password?', { textColor: '$primary', align: 'right', width: 'fill', fontWeight: 500 }),
+						field('login_email', 'Email', { icon: 'mail', text: 'you@example.com' }),
+						field('login_password', 'Password', { icon: 'lock', text: 'Enter your password' }),
+						row('login_options', [
+							{ id: 'login_remember', type: 'checkbox', text: 'Remember me', fontSize: 14, checked: true },
+							txt('login_forgot', 'Forgot password?', { textColor: '$primary', fontSize: 14, fontWeight: 600 }),
+						], { width: 'fill', justify: 'space-between' }),
 					], { gap: 16 }),
-					{ id: 'login_primary_btn', type: 'button', text: 'Log in', width: 'fill' },
+					{ id: 'login_primary_btn', type: 'button', text: 'Log in', width: 'fill', height: 52 },
 				],
-				{ width: 'fill', height: 'fill', gap: 24, justify: 'center', alignItems: 'stretch' }
+				{ width: 'fill', height: 'fill', gap: 32, justify: 'center', alignItems: 'stretch' }
 			),
 			row('login_footer', [muted('login_footer_text', "Don't have an account?"), txt('login_signup_link', 'Sign up', { textColor: '$primary', fontSize: 14, fontWeight: 600 })], {
 				width: 'fill',
@@ -89,9 +117,8 @@ function loginScreen(): Spec {
 }
 
 const loginSocial = (): Spec[] => [
-	row('login_or', [{ id: 'login_or_l', type: 'divider', width: 'fill' }, muted('login_or_text', 'or'), { id: 'login_or_r', type: 'divider', width: 'fill' }], { width: 'fill', gap: 12 }),
-	secondaryBtn('login_google_btn', 'Continue with Google', { width: 'fill', icon: 'user' }),
-	secondaryBtn('login_apple_btn', 'Continue with Apple', { width: 'fill', icon: 'user' }),
+	row('login_or', [{ id: 'login_or_l', type: 'divider', name: 'Divider', width: 'fill' }, muted('login_or_text', 'or continue with'), { id: 'login_or_r', type: 'divider', name: 'Divider', width: 'fill' }], { width: 'fill', gap: 16 }),
+	row('login_social', [secondaryBtn('login_google_btn', 'Google', { width: 'fill' }), secondaryBtn('login_apple_btn', 'Apple', { width: 'fill' })], { width: 'fill', gap: 12 }),
 ]
 
 function signupScreen(): Spec {
@@ -100,26 +127,26 @@ function signupScreen(): Spec {
 		name: 'Sign up',
 		device: 'iphone',
 		layout: 'vertical',
-		gap: 16,
-		padding: [64, 24, 32, 24],
+		gap: 24,
+		padding: [72, 24, 40, 24],
 		alignItems: 'stretch',
 		children: [
 			frame(
 				'signup_content',
 				[
 					frame('signup_header', [
-						txt('signup_title', 'Create your account', { fontSize: 32, fontWeight: 700 }),
-						muted('signup_subtitle', 'It only takes a minute.', { fontSize: 16 }),
+						txt('signup_title', 'Create your account', { fontSize: 30, fontWeight: 700 }),
+						muted('signup_subtitle', 'It only takes a minute. No credit card needed.', { fontSize: 16 }),
 					], { gap: 8 }),
 					frame('signup_form', [
-						{ id: 'signup_name', type: 'input', icon: 'user', text: 'Full name' },
-						{ id: 'signup_email', type: 'input', icon: 'mail', text: 'Email address' },
-						{ id: 'signup_password', type: 'input', icon: 'lock', text: 'Password' },
-						{ id: 'signup_terms', type: 'checkbox', text: 'I agree to the Terms of Service', checked: true },
+						field('signup_name', 'Full name', { icon: 'user', text: 'Jane Cooper' }),
+						field('signup_email', 'Email', { icon: 'mail', text: 'you@example.com' }),
+						field('signup_password', 'Password', { icon: 'lock', text: 'At least 8 characters' }),
+						{ id: 'signup_terms', type: 'checkbox', text: 'I agree to the Terms and Privacy Policy', fontSize: 14, checked: true },
 					], { gap: 16 }),
-					{ id: 'signup_primary_btn', type: 'button', text: 'Create account', width: 'fill' },
+					{ id: 'signup_primary_btn', type: 'button', text: 'Create account', width: 'fill', height: 52 },
 				],
-				{ width: 'fill', height: 'fill', gap: 24, justify: 'center', alignItems: 'stretch' }
+				{ width: 'fill', height: 'fill', gap: 32, justify: 'center', alignItems: 'stretch' }
 			),
 			row('signup_footer', [muted('signup_footer_text', 'Already have an account?'), txt('signup_login_link', 'Log in', { textColor: '$primary', fontSize: 14, fontWeight: 600 })], {
 				width: 'fill',
@@ -130,112 +157,170 @@ function signupScreen(): Spec {
 	}
 }
 
-const statCard = (key: string, label: string, value: string, delta: string, up = true): Spec =>
-	frame(`dash_stat_${key}`, [muted(`dash_stat_${key}_label`, label), txt(`dash_stat_${key}_value`, value, { fontSize: 32, fontWeight: 700 }), muted(`dash_stat_${key}_delta`, delta, { textColor: up ? '#16a34a' : '#dc2626' })], {
-		width: 'fill',
-		gap: 8,
-		padding: 24,
-		fill: '$surface',
-		stroke: '$border',
-		strokeWidth: 1,
-		radius: 16,
-		shadow: 'sm',
-	})
+const statCard = (key: string, icon: string, label: string, value: string, delta: string, up = true): Spec =>
+	card(`dash_stat_${key}`, [
+		row(`dash_stat_${key}_top`, [muted(`dash_stat_${key}_label`, label, { fontWeight: 500 }), iconTile(`dash_stat_${key}_icon`, icon, 32)], { width: 'fill', justify: 'space-between' }),
+		txt(`dash_stat_${key}_value`, value, { fontSize: 28, fontWeight: 700 }),
+		row(`dash_stat_${key}_trend`, [
+			chip(`dash_stat_${key}_delta`, delta, { textColor: up ? '$success' : '$danger', fill: '$surfaceAlt', padding: [4, 8, 4, 8] }, up ? 'arrow-up-right' : 'arrow-down-right'),
+			muted(`dash_stat_${key}_period`, 'vs last week', { fontSize: 13 }),
+		], { width: 'fill', gap: 8 }),
+	], { gap: 12, padding: 20 })
+
+const navItem = (key: string, icon: string, label: string, active = false): Spec =>
+	row(`dash_nav_${key}`, [
+		{ id: `dash_nav_${key}_icon`, type: 'icon', icon, width: 20, height: 20, textColor: active ? '$primary' : '$muted' },
+		txt(`dash_nav_${key}_label`, label, { fontSize: 15, fontWeight: active ? 600 : 500, textColor: active ? '$primary' : '$text' }),
+	], { width: 'fill', gap: 12, padding: [10, 12, 10, 12], radius: 10, ...(active ? { fill: '$primarySoft' } : {}) })
+
+const BARS = [42, 58, 50, 72, 64, 88, 76, 94, 70, 82, 100, 86]
 
 function dashboardScreen(): Spec {
 	return {
 		id: 'dashboard',
 		name: 'Dashboard',
 		device: 'desktop',
-		layout: 'vertical',
-		gap: 24,
-		padding: [32, 48, 32, 48],
+		layout: 'horizontal',
+		gap: 0,
+		padding: 0,
 		alignItems: 'stretch',
 		children: [
-			row('dash_header', [
-				frame('dash_heading', [txt('dash_title', 'Dashboard', { fontSize: 32, fontWeight: 700 }), muted('dash_subtitle', "Here's how your store is doing this week.", { fontSize: 16 })], { gap: 4 }),
-				row('dash_user', [{ id: 'dash_bell', type: 'icon', icon: 'bell' }, { id: 'dash_avatar', type: 'avatar', text: 'AK' }], { gap: 16 }),
-			], { width: 'fill', justify: 'space-between' }),
-			frame(
-				'dash_content',
-				[
-					row('dash_stats', [statCard('revenue', 'Revenue', '$48,230', '+12.4% vs last week'), statCard('orders', 'Orders', '1,284', '+5.1% vs last week'), statCard('refunds', 'Refunds', '37', '+2.3% vs last week', false)], { width: 'fill', gap: 24, alignItems: 'stretch' }),
-					frame('dash_chart', [txt('dash_chart_title', 'Revenue over time', { fontSize: 18, fontWeight: 600 }), { id: 'dash_chart_img', type: 'image', name: 'Chart', width: 'fill', height: 240 }], {
-						width: 'fill',
-						gap: 16,
-						padding: 24,
-						fill: '$surface',
-						stroke: '$border',
-						strokeWidth: 1,
-						radius: 16,
-					}),
-				],
-				{ width: 'fill', height: 'fill', gap: 24, alignItems: 'stretch' }
-			),
+			frame('dash_sidebar', [
+				row('dash_brand', [iconTile('dash_logo', 'sparkle', 32, { fill: '$primary', radius: 10 }), txt('dash_brand_name', 'Lumen', { fontSize: 18, fontWeight: 700 })], { gap: 12, padding: [0, 8, 24, 8] }),
+				navItem('overview', 'home', 'Overview', true),
+				navItem('orders', 'cart', 'Orders'),
+				navItem('products', 'package', 'Products'),
+				navItem('customers', 'users', 'Customers'),
+				navItem('analytics', 'chart', 'Analytics'),
+				navItem('settings', 'settings', 'Settings'),
+				frame('dash_sidebar_spacer', [], { height: 'fill' }),
+				row('dash_me', [
+					{ id: 'dash_avatar', type: 'avatar', text: 'Ava Kim' },
+					frame('dash_me_info', [txt('dash_me_name', 'Ava Kim', { fontSize: 14, fontWeight: 600 }), muted('dash_me_role', 'Store owner', { fontSize: 13 })], { gap: 2, width: 'fill' }),
+					{ id: 'dash_me_more', type: 'icon', icon: 'more', width: 20, height: 20, textColor: '$muted' },
+				], { width: 'fill', gap: 12, padding: 8 }),
+			], { width: 248, height: 'fill', gap: 4, padding: [28, 16, 24, 16], fill: '$surface', stroke: '$border', strokeWidth: 1 }),
+			frame('dash_main', [
+				row('dash_header', [
+					frame('dash_heading', [txt('dash_title', 'Overview', { fontSize: 28, fontWeight: 700 }), muted('dash_subtitle', "Here's how your store is doing this week.", { fontSize: 15 })], { gap: 4, width: 'fill' }),
+					row('dash_actions', [
+						{ id: 'dash_search', type: 'input', icon: 'search', text: 'Search', width: 240, height: 40, fontSize: 14 },
+						secondaryBtn('dash_bell', '', { icon: 'bell', width: 40, height: 40, padding: 0 }),
+						{ id: 'dash_primary_btn', type: 'button', text: 'New order', icon: 'plus', height: 40, fontSize: 14, padding: [0, 16, 0, 14] },
+					], { width: 'hug', gap: 12 }),
+				], { width: 'fill', gap: 24 }),
+				frame(
+					'dash_content',
+					[
+						row('dash_stats', [
+							statCard('revenue', 'credit-card', 'Revenue', '$48,230', '12.4%'),
+							statCard('orders', 'cart', 'Orders', '1,284', '5.1%'),
+							statCard('customers', 'users', 'New customers', '312', '8.2%'),
+							statCard('refunds', 'arrow-left', 'Refunds', '37', '2.3%', false),
+						], { width: 'fill', gap: 16, alignItems: 'stretch' }),
+						card('dash_chart', [
+							row('dash_chart_head', [
+								frame('dash_chart_titles', [txt('dash_chart_title', 'Revenue', { fontSize: 16, fontWeight: 600 }), muted('dash_chart_sub', 'Last 12 weeks', { fontSize: 13 })], { gap: 2, width: 'fill' }),
+								chip('dash_chart_range', 'Weekly', { fill: '$surfaceAlt', textColor: '$text' }),
+							], { width: 'fill' }),
+							row('dash_chart_bars', BARS.map((v, i) => ({ id: `dash_bar_${i + 1}`, type: 'rect', name: `Bar ${i + 1}`, width: 'fill', height: Math.round(v * 2.6), radius: 6, fill: i === BARS.length - 2 ? '$primary' : '$primarySoft' })), {
+								width: 'fill',
+								height: 'fill',
+								gap: 12,
+								alignItems: 'end',
+							}),
+						], { gap: 24, height: 'fill' }),
+					],
+					{ width: 'fill', height: 'fill', gap: 24, alignItems: 'stretch' }
+				),
+			], { width: 'fill', height: 'fill', gap: 28, padding: [32, 40, 32, 40] }),
 		],
 	}
 }
 
-const activityRow = (key: string, who: string, what: string, amount: string): Spec =>
+const activityRow = (key: string, who: string, what: string, amount: string, status: string): Spec =>
 	row(`dash_row_${key}`, [
-		{ id: `dash_row_${key}_avatar`, type: 'avatar', text: who.slice(0, 2).toUpperCase() },
-		frame(`dash_row_${key}_info`, [txt(`dash_row_${key}_name`, who, { fontWeight: 600 }), muted(`dash_row_${key}_what`, what)], { gap: 2, width: 'fill' }),
-		txt(`dash_row_${key}_amount`, amount, { fontWeight: 600 }),
-	], { width: 'fill', gap: 12, padding: [12, 0, 12, 0] })
+		{ id: `dash_row_${key}_avatar`, type: 'avatar', text: who },
+		frame(`dash_row_${key}_info`, [txt(`dash_row_${key}_name`, who, { fontSize: 15, fontWeight: 600 }), muted(`dash_row_${key}_what`, what, { fontSize: 13 })], { gap: 2, width: 'fill' }),
+		chip(`dash_row_${key}_status`, status, { fill: '$surfaceAlt', textColor: status === 'Paid' ? '$success' : '$muted', padding: [4, 10, 4, 10] }),
+		txt(`dash_row_${key}_amount`, amount, { fontSize: 15, fontWeight: 600, width: 96, align: 'right' }),
+	], { width: 'fill', gap: 16, padding: [12, 0, 12, 0] })
 
 const dashActivity = (): Spec =>
-	frame('dash_activity', [
-		txt('dash_activity_title', 'Recent activity', { fontSize: 18, fontWeight: 600 }),
-		activityRow('1', 'Maya Chen', 'Order #1042, 3 items', '$128.00'),
-		{ id: 'dash_div_1', type: 'divider', width: 'fill' },
-		activityRow('2', 'Leo Park', 'Order #1041, 1 item', '$54.90'),
-		{ id: 'dash_div_2', type: 'divider', width: 'fill' },
-		activityRow('3', 'Sam Ortiz', 'Order #1040, 2 items', '$87.50'),
-	], { width: 'fill', gap: 8, padding: 24, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16 })
+	card('dash_activity', [
+		row('dash_activity_head', [txt('dash_activity_title', 'Recent orders', { fontSize: 16, fontWeight: 600 }), txt('dash_activity_all', 'View all', { fontSize: 14, fontWeight: 600, textColor: '$primary' })], { width: 'fill', justify: 'space-between' }),
+		frame('dash_activity_rows', [
+			activityRow('1', 'Maya Chen', 'Order #1042 · 3 items', '$128.00', 'Paid'),
+			{ id: 'dash_div_1', type: 'divider', width: 'fill' },
+			activityRow('2', 'Leo Park', 'Order #1041 · 1 item', '$54.90', 'Pending'),
+			{ id: 'dash_div_2', type: 'divider', width: 'fill' },
+			activityRow('3', 'Sam Ortiz', 'Order #1040 · 2 items', '$87.50', 'Paid'),
+		], { gap: 0 }),
+	], { gap: 8, padding: [20, 24, 12, 24] })
 
 function landingScreen(): Spec {
 	return {
 		id: 'landing',
 		name: 'Landing page',
 		device: 'desktop',
+		height: 1680,
 		layout: 'vertical',
 		gap: 0,
 		padding: 0,
 		alignItems: 'stretch',
 		children: [
 			row('landing_nav', [
-				row('landing_brand', [{ id: 'landing_logo', type: 'icon', icon: 'star', textColor: '$primary' }, txt('landing_brand_name', 'Acme', { fontSize: 20, fontWeight: 700 })], { gap: 8 }),
-				row('landing_links', [txt('landing_link_1', 'Product', { textColor: '$muted' }), txt('landing_link_2', 'Pricing', { textColor: '$muted' }), txt('landing_link_3', 'About', { textColor: '$muted' })], { gap: 32 }),
-				{ id: 'landing_nav_cta', type: 'button', text: 'Get started' },
-			], { width: 'fill', justify: 'space-between', padding: [20, 64, 20, 64] }),
+				row('landing_brand', [iconTile('landing_logo', 'sparkle', 32, { fill: '$primary', radius: 10 }), txt('landing_brand_name', 'Acme', { fontSize: 20, fontWeight: 700 })], { width: 'hug', gap: 12 }),
+				row('landing_links', [txt('landing_link_1', 'Product', { fontSize: 15, fontWeight: 500, textColor: '$muted' }), txt('landing_link_2', 'Pricing', { fontSize: 15, fontWeight: 500, textColor: '$muted' }), txt('landing_link_3', 'Customers', { fontSize: 15, fontWeight: 500, textColor: '$muted' }), txt('landing_link_4', 'Docs', { fontSize: 15, fontWeight: 500, textColor: '$muted' })], { width: 'hug', gap: 32 }),
+				row('landing_nav_actions', [txt('landing_login', 'Log in', { fontSize: 15, fontWeight: 600 }), { id: 'landing_nav_cta', type: 'button', text: 'Get started', height: 40, fontSize: 14, padding: [0, 18, 0, 18] }], { width: 'hug', gap: 24 }),
+			], { width: 'fill', justify: 'space-between', padding: [20, 80, 20, 80] }),
 			frame(
 				'landing_hero',
 				[
-					txt('landing_eyebrow', 'Introducing Acme 2.0', { textColor: '$primary', fontSize: 14, fontWeight: 600 }),
-					txt('landing_headline', 'Design faster, together', { fontSize: 56, fontWeight: 700, align: 'center' }),
-					muted('landing_sub', 'Describe what you want and watch it appear. Share it with your team in one click.', { fontSize: 20, align: 'center', width: 640 }),
-					row('landing_cta', [{ id: 'landing_primary_btn', type: 'button', text: 'Start free' }, secondaryBtn('landing_secondary_btn', 'Watch demo')], { gap: 16 }),
-					{ id: 'landing_hero_img', type: 'image', name: 'Product shot', width: 960, height: 360, radius: 20 },
+					chip('landing_eyebrow', 'Introducing Acme 2.0', {}, 'sparkle'),
+					txt('landing_headline', 'Design faster, together', { fontSize: 64, fontWeight: 700, align: 'center' }),
+					muted('landing_sub', 'Describe what you want and watch it appear. Share it with your team in one click.', { fontSize: 20, align: 'center', width: 600 }),
+					row('landing_cta', [{ id: 'landing_primary_btn', type: 'button', text: 'Start for free', height: 52, padding: [0, 28, 0, 28] }, secondaryBtn('landing_secondary_btn', 'Watch demo', { icon: 'play', height: 52, padding: [0, 24, 0, 24] })], { width: 'hug', gap: 12 }),
+					muted('landing_note', 'Free for teams up to 3 · No credit card required', { fontSize: 13 }),
+					frame('landing_shot', [{ id: 'landing_hero_img', type: 'image', name: 'Product shot', width: 'fill', height: 'fill', radius: 12 }], {
+						width: 1040,
+						height: 520,
+						padding: 12,
+						fill: '$surface',
+						stroke: '$border',
+						strokeWidth: 1,
+						radius: 24,
+						shadow: 'lg',
+					}),
 				],
-				{ width: 'fill', gap: 24, alignItems: 'center', padding: [96, 64, 64, 64] }
+				{ width: 'fill', gap: 24, alignItems: 'center', padding: [72, 80, 0, 80] }
 			),
+			frame('landing_logos', [
+				muted('landing_logos_title', 'Trusted by product teams at', { fontSize: 14, fontWeight: 500 }),
+				row('landing_logos_row', ['Northwind', 'Lumen', 'Pioneer', 'Halcyon', 'Vertex'].map((n, i) => txt(`landing_logo_${i + 1}`, n, { fontSize: 22, fontWeight: 700, textColor: '$muted', opacity: 0.7 })), { width: 'hug', gap: 64 }),
+			], { width: 'fill', gap: 20, alignItems: 'center', padding: [64, 80, 24, 80] }),
 		],
 	}
 }
 
 const featureCard = (key: string, icon: string, title: string, body: string): Spec =>
-	frame(`landing_feature_${key}`, [
-		frame(`landing_feature_${key}_icon`, [{ id: `landing_feature_${key}_glyph`, type: 'icon', icon, textColor: '$primary' }], { width: 48, height: 48, fill: '$surfaceAlt', radius: 12, alignItems: 'center', justify: 'center' }),
-		txt(`landing_feature_${key}_title`, title, { fontSize: 20, fontWeight: 600 }),
-		muted(`landing_feature_${key}_body`, body, { fontSize: 16 }),
-	], { width: 'fill', gap: 12, padding: 24, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16 })
+	card(`landing_feature_${key}`, [
+		iconTile(`landing_feature_${key}_icon`, icon, 48),
+		frame(`landing_feature_${key}_text`, [txt(`landing_feature_${key}_title`, title, { fontSize: 20, fontWeight: 600 }), muted(`landing_feature_${key}_body`, body, { fontSize: 16, width: 'fill' })], { gap: 8 }),
+	], { gap: 24, padding: 32, radius: 20 })
 
 const landingFeatures = (): Spec =>
-	row('landing_features', [
-		featureCard('speed', 'star', 'Lightning fast', 'Go from idea to a clickable draft in seconds.'),
-		featureCard('team', 'user', 'Built for teams', 'Invite anyone and design together in real time.'),
-		featureCard('share', 'check', 'Ship with confidence', 'Export clean code and hand it straight to engineers.'),
-	], { width: 'fill', gap: 24, alignItems: 'stretch', padding: [32, 64, 64, 64] })
+	frame('landing_features', [
+		frame('landing_features_head', [
+			txt('landing_features_title', 'Everything your team needs', { fontSize: 40, fontWeight: 700, align: 'center' }),
+			muted('landing_features_sub', 'From first sketch to shipped code, without the handoff headaches.', { fontSize: 18, align: 'center' }),
+		], { width: 'hug', gap: 12, alignItems: 'center' }),
+		row('landing_features_row', [
+			featureCard('speed', 'zap', 'Lightning fast', 'Go from idea to a clickable draft in seconds, just by describing it.'),
+			featureCard('team', 'users', 'Built for teams', 'Invite anyone and design together in real time, with comments.'),
+			featureCard('share', 'shield', 'Ship with confidence', 'Export clean code and hand it straight to your engineers.'),
+		], { width: 'fill', gap: 24, alignItems: 'stretch' }),
+	], { width: 'fill', gap: 48, alignItems: 'center', padding: [72, 80, 96, 80] })
 
 function onboardingScreen(i: number, title: string, desc: string, last = false): Spec {
 	const id = `onb${i}`
@@ -245,42 +330,48 @@ function onboardingScreen(i: number, title: string, desc: string, last = false):
 		device: 'iphone',
 		layout: 'vertical',
 		gap: 24,
-		padding: [64, 24, 32, 24],
+		padding: [64, 24, 40, 24],
 		alignItems: 'stretch',
 		children: [
 			frame(
 				`${id}_content`,
 				[
-					{ id: `${id}_img`, type: 'image', name: 'Illustration', width: 'fill', height: 320, radius: 24 },
-					txt(`${id}_title`, title, { fontSize: 28, fontWeight: 700, align: 'center', width: 'fill' }),
-					muted(`${id}_desc`, desc, { fontSize: 16, align: 'center', width: 'fill' }),
-					row(`${id}_dots`, [1, 2, 3].map((d) => ({ id: `${id}_dot_${d}`, type: 'rect', width: d === i ? 24 : 8, height: 8, radius: 4, fill: d === i ? '$primary' : '$border' })), { gap: 8, justify: 'center' }),
+					{ id: `${id}_img`, type: 'image', name: 'Illustration', width: 'fill', height: 340, radius: 32 },
+					frame(`${id}_text`, [
+						txt(`${id}_title`, title, { fontSize: 30, fontWeight: 700, align: 'center', width: 'fill' }),
+						muted(`${id}_desc`, desc, { fontSize: 16, align: 'center', width: 'fill' }),
+					], { gap: 12, alignItems: 'center' }),
+					row(`${id}_dots`, [1, 2, 3].map((d) => ({ id: `${id}_dot_${d}`, type: 'rect', width: d === i ? 24 : 8, height: 8, radius: 4, fill: d === i ? '$primary' : '$border' })), { width: 'hug', gap: 8 }),
 				],
-				{ width: 'fill', height: 'fill', gap: 24, alignItems: 'center', justify: 'center' }
+				{ width: 'fill', height: 'fill', gap: 32, alignItems: 'center', justify: 'center' }
 			),
 			frame(`${id}_footer`, [
-				{ id: `${id}_next`, type: 'button', text: last ? 'Get started' : 'Next', width: 'fill' },
+				{ id: `${id}_next`, type: 'button', text: last ? 'Get started' : 'Next', width: 'fill', height: 52 },
 				{ id: `${id}_skip`, type: 'button', text: 'Skip', width: 'fill', fill: 'transparent', textColor: '$muted' },
 			], { width: 'fill', gap: 8, alignItems: 'stretch' }),
 		],
 	}
 }
 
-const settingsRow = (key: string, icon: string, label: string, trailing: 'toggle' | 'arrow', checked = false): Spec =>
+const settingsRow = (key: string, icon: string, label: string, trailing: 'toggle' | 'arrow', checked = false, detail?: string): Spec =>
 	row(`settings_${key}`, [
-		{ id: `settings_${key}_icon`, type: 'icon', icon, textColor: '$primary' },
-		txt(`settings_${key}_label`, label, { width: 'fill' }),
-		trailing === 'toggle' ? { id: `settings_${key}_toggle`, type: 'toggle', checked } : { id: `settings_${key}_arrow`, type: 'icon', icon: 'arrow-right', textColor: '$muted' },
-	], { width: 'fill', gap: 12, padding: [14, 16, 14, 16] })
+		iconTile(`settings_${key}_icon`, icon, 32),
+		txt(`settings_${key}_label`, label, { width: 'fill', fontWeight: 500 }),
+		...(detail ? [muted(`settings_${key}_detail`, detail)] : []),
+		trailing === 'toggle' ? { id: `settings_${key}_toggle`, type: 'toggle', checked } : { id: `settings_${key}_arrow`, type: 'icon', icon: 'chevron-right', width: 20, height: 20, textColor: '$muted' },
+	], { width: 'fill', gap: 12, padding: [12, 16, 12, 16] })
 
 function settingsScreen(): Spec {
-	const card = (id: string, rows: Spec[]) => {
+	const group = (id: string, title: string, rows: Spec[]) => {
 		const kids: Spec[] = []
 		rows.forEach((r, i) => {
 			if (i) kids.push({ id: `${id}_div_${i}`, type: 'divider', width: 'fill' })
 			kids.push(r)
 		})
-		return frame(id, kids, { width: 'fill', gap: 0, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16 })
+		return frame(`${id}_group`, [
+			muted(`${id}_heading`, title.toUpperCase(), { fontSize: 12, fontWeight: 600 }),
+			frame(id, kids, { width: 'fill', gap: 0, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16 }),
+		], { gap: 8 })
 	}
 	return {
 		id: 'settings',
@@ -291,13 +382,18 @@ function settingsScreen(): Spec {
 		padding: [64, 24, 32, 24],
 		alignItems: 'stretch',
 		children: [
-			txt('settings_title', 'Settings', { fontSize: 32, fontWeight: 700 }),
+			txt('settings_title', 'Settings', { fontSize: 30, fontWeight: 700 }),
 			frame(
 				'settings_content',
 				[
-					card('settings_account', [settingsRow('profile', 'user', 'Profile', 'arrow'), settingsRow('email', 'mail', 'Email', 'arrow'), settingsRow('password', 'lock', 'Password', 'arrow')]),
-					card('settings_prefs', [settingsRow('notifications', 'bell', 'Notifications', 'toggle', true), settingsRow('darkmode', 'star', 'Dark mode', 'toggle')]),
-					secondaryBtn('settings_logout_btn', 'Log out', { width: 'fill', textColor: '#dc2626' }),
+					card('settings_profile', [
+						{ id: 'settings_avatar', type: 'avatar', text: 'Jane Cooper', width: 48, height: 48 },
+						frame('settings_profile_info', [txt('settings_profile_name', 'Jane Cooper', { fontWeight: 600 }), muted('settings_profile_email', 'jane@example.com')], { gap: 2, width: 'fill' }),
+						{ id: 'settings_profile_arrow', type: 'icon', icon: 'chevron-right', width: 20, height: 20, textColor: '$muted' },
+					], { layout: 'horizontal', alignItems: 'center', gap: 16, padding: 16 }),
+					group('settings_account', 'Account', [settingsRow('email', 'mail', 'Email', 'arrow'), settingsRow('password', 'lock', 'Password', 'arrow')]),
+					group('settings_prefs', 'Preferences', [settingsRow('notifications', 'bell', 'Notifications', 'toggle', true), settingsRow('darkmode', 'moon', 'Dark mode', 'toggle'), settingsRow('language', 'globe', 'Language', 'arrow', false, 'English')]),
+					secondaryBtn('settings_logout_btn', 'Log out', { width: 'fill', textColor: '$danger', icon: 'logout' }),
 				],
 				{ width: 'fill', height: 'fill', gap: 24, alignItems: 'stretch' }
 			),
@@ -311,6 +407,12 @@ function genericScreen(request: string): { spec: Spec; name: string } {
 	const name = words.length ? words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ') : 'New screen'
 	const slug = words.join('_') || 'new'
 	const id = `screen_${slug}`
+	const item = (k: number, icon: string, title: string, body: string): Spec =>
+		row(`${id}_item_${k}`, [
+			iconTile(`${id}_item_${k}_icon`, icon, 48, { radius: 14 }),
+			frame(`${id}_item_${k}_text`, [txt(`${id}_item_${k}_title`, title, { fontWeight: 600 }), muted(`${id}_item_${k}_body`, body)], { gap: 2, width: 'fill' }),
+			{ id: `${id}_item_${k}_arrow`, type: 'icon', icon: 'chevron-right', width: 20, height: 20, textColor: '$muted' },
+		], { width: 'fill', gap: 16, padding: 16, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 16 })
 	return {
 		name,
 		spec: {
@@ -323,16 +425,15 @@ function genericScreen(request: string): { spec: Spec; name: string } {
 			alignItems: 'stretch',
 			children: [
 				frame(`${id}_content`, [
-					txt(`${id}_title`, name, { fontSize: 32, fontWeight: 700 }),
-					muted(`${id}_subtitle`, 'A first draft based on your idea. Tell me what to change.', { fontSize: 16 }),
-					{ id: `${id}_image`, type: 'image', name: 'Hero image', width: 'fill', height: 200 },
+					frame(`${id}_header`, [
+						txt(`${id}_title`, name, { fontSize: 30, fontWeight: 700 }),
+						muted(`${id}_subtitle`, 'A first draft based on your idea. Tell me what to change.', { fontSize: 16 }),
+					], { gap: 8 }),
 					{ id: `${id}_input`, type: 'input', icon: 'search', text: 'Search' },
-					row(`${id}_cards`, [
-						frame(`${id}_card_1`, [txt(`${id}_card_1_title`, 'Item one', { fontWeight: 600 }), muted(`${id}_card_1_body`, 'Short description')], { width: 'fill', gap: 4, padding: 16, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 12 }),
-						frame(`${id}_card_2`, [txt(`${id}_card_2_title`, 'Item two', { fontWeight: 600 }), muted(`${id}_card_2_body`, 'Short description')], { width: 'fill', gap: 4, padding: 16, fill: '$surface', stroke: '$border', strokeWidth: 1, radius: 12 }),
-					], { width: 'fill', gap: 12, alignItems: 'stretch' }),
-					{ id: `${id}_primary_btn`, type: 'button', text: 'Continue', width: 'fill' },
-				], { width: 'fill', height: 'fill', gap: 16, alignItems: 'stretch' }),
+					{ id: `${id}_image`, type: 'image', name: 'Hero image', width: 'fill', height: 180, radius: 20 },
+					frame(`${id}_list`, [item(1, 'star', 'Item one', 'Short description'), item(2, 'bookmark', 'Item two', 'Short description')], { gap: 12 }),
+					{ id: `${id}_primary_btn`, type: 'button', text: 'Continue', width: 'fill', height: 52 },
+				], { width: 'fill', height: 'fill', gap: 24, alignItems: 'stretch' }),
 			],
 		},
 	}
@@ -535,7 +636,7 @@ export class MockProvider implements LLMProvider {
 			const who = owner ? `${owner}, ` : ''
 			const title = focus?.node ?? titleNode(screen) ?? screen
 			const nodes = descendants(screen)
-			const tinyText = nodes.find((x) => x.type === 'text' && Number(x.raw?.fontSize) > 0 && Number(x.raw?.fontSize) < 14)
+			const tinyText = nodes.find((x) => x.type === 'text' && Number(x.raw?.fontSize) > 0 && Number(x.raw?.fontSize) < 13)
 			const smallBtn = nodes.find((x) => x.type === 'button' && Number(x.raw?.h ?? x.raw?.height) > 0 && Number(x.raw?.h ?? x.raw?.height) < 44)
 			const btn = primaryButton(screen)
 			const praiseText = focus
@@ -556,7 +657,7 @@ export class MockProvider implements LLMProvider {
 						id: 'review_issue',
 						targetShapeId: flagged.id,
 						kind: 'issue',
-						text: flagged.type === 'button' ? 'This button is under 44 pixels tall, which is hard to tap on a phone.' : 'This text is smaller than 14 pixels and may be hard to read.',
+						text: flagged.type === 'button' ? 'This button is under 44 pixels tall, which is hard to tap on a phone.' : 'This text is smaller than 13 pixels and may be hard to read.',
 						addressedTo: owner,
 					})
 				)
