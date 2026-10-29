@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "id": "launch",
+  "title": "Grok Design launch",
+  "width": 1920,
+  "height": 1080,
+  "fps": 60,
+  "items": [
+    { "clip": { "kind": "scene", "id": "title" } },
+    { "clip": { "kind": "scene", "id": "speak" }, "transition": { "kind": "cut" } },
+    { "clip": { "kind": "scene", "id": "layout" }, "transition": { "kind": "cut" } },
+    { "clip": { "kind": "scene", "id": "dark" }, "transition": { "kind": "cut" } },
+    { "clip": { "kind": "scene", "id": "code" }, "transition": { "kind": "cut" } },
+    { "clip": { "kind": "scene", "id": "end" }, "transition": { "kind": "cut" } }
+  ],
+  "music": { "style": "launch" }
+}

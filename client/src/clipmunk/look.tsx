@@ -63,7 +63,7 @@ export function Words({ text, keys = [], start = 150, stagger = 85, dur = 520, r
 		<>
 			{words.map((w, i) => {
 				const p = easeOut(progress(t, start + i * stagger, dur))
-				const key = keys.includes(w.replace(/[.,!?]/g, ''))
+				const key = keys.includes(w) || keys.includes(w.replace(/[.,!?]/g, ''))
 				return (
 					<span
 						key={i}
@@ -138,7 +138,8 @@ export function BrowserWindow({ url, children }: { url: string; children: ReactN
 						</div>
 					</div>
 				</div>
-				<div style={{ position: 'relative', width: APP_W, height: APP_H, overflow: 'hidden', isolation: 'isolate' }}>{children}</div>
+				{/* contain: paint keeps the app's fixed overlays (the code modal) inside the page area. */}
+				<div style={{ position: 'relative', width: APP_W, height: APP_H, overflow: 'hidden', isolation: 'isolate', contain: 'paint' }}>{children}</div>
 			</div>
 		</Surface>
 	)

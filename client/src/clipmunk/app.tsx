@@ -154,6 +154,7 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 						components={components}
 						onMount={(e) => {
 							e.user.updateUserPreferences({ colorScheme: 'system' })
+							;(window as any).__videoEditor = e
 							const off = registerAuthorship(e, ME)
 							syncViewport(e)
 							setup?.({ editor: e, exec: new CanvasExecutor(e) })
@@ -199,3 +200,20 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 	)
 }
 
+
+/**
+ * Frames page bounds in the canvas like the shell's zoom to fit (fitVisible:
+ * 64px sides, the screen label above, the voice dock below). fitVisible itself
+ * measures the dock with getBoundingClientRect, which the scene's 3D transform
+ * scales, so the same margins are applied here in layout pixels.
+ */
+export function fitTo(editor: Editor, b: Box, opts: { top?: number; bottom?: number; side?: number; maxZoom?: number } = {}) {
+	const { top = 72, bottom = 150, side = 64, maxZoom = 1 } = opts
+	const vp = editor.getViewportScreenBounds()
+	const availW = vp.w - side * 2
+	const availH = vp.h - top - bottom
+	const z = Math.min(availW / b.w, availH / b.h, maxZoom)
+	const left = (vp.w - b.w * z) / 2
+	const y = top + (availH - b.h * z) / 2
+	editor.setCamera({ x: left / z - b.x, y: y / z - b.y, z })
+}

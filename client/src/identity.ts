@@ -36,6 +36,7 @@ export function getRoomId(): string {
 	const m = location.pathname.match(/^\/r\/([a-zA-Z0-9_-]{1,64})$/)
 	if (m) return m[1]
 	const id = crypto.randomUUID().slice(0, 8)
-	history.replaceState(null, '', `/r/${id}`)
+	// Keep the query and hash (e.g. ?clipmunk=1 for the dev-only video studio).
+	history.replaceState(null, '', `/r/${id}${location.search}${location.hash}`)
 	return id
 }
