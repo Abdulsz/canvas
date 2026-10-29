@@ -122,6 +122,21 @@ await ask('switch to dark mode')
 await onBoth(() => window.__editor.getShape('shape:login')?.meta.theme?.mode === 'dark', null, 'login in dark mode')
 step('turn 4: "switch to dark mode" → login meta.theme.mode = dark')
 
+// A 1:1 PNG export of the dark screen paints its own dark background (tldraw skips a lone frame's
+// own fill when exporting it, which used to give white or black behind the light text).
+const exportPixels = await alice.evaluate(async () => {
+	const { blob } = await window.__editor.toImage(['shape:login'], { format: 'png', scale: 1, pixelRatio: 1, background: true, padding: 0 })
+	const bmp = await createImageBitmap(blob)
+	const c = new OffscreenCanvas(bmp.width, bmp.height)
+	const g = c.getContext('2d')
+	g.drawImage(bmp, 0, 0)
+	const at = (x, y) => [...g.getImageData(x, y, 1, 1).data.slice(0, 3)]
+	return { w: bmp.width, corner: at(4, bmp.height - 4), middle: at(bmp.width - 4, Math.round(bmp.height * 0.6)) }
+})
+const dark = ([r, g, b]) => r + g + b < 120
+if (exportPixels.w !== 390 || !dark(exportPixels.corner) || !dark(exportPixels.middle)) fail(`dark login export is not dark: ${JSON.stringify(exportPixels)}`)
+step(`dark login exports 1:1 with its own dark background (${exportPixels.corner.join(',')})`)
+
 // ------------------------------------------------------------------ turn 5: flow
 await ask('add a signup screen and connect it')
 await onBoth(

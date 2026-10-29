@@ -267,3 +267,29 @@ test('mock finds a node to delete on any screen; a declined change is acknowledg
 	const says = bob.received.filter((m) => m.type === 'agent_say' && !m.ephemeral)
 	assert.ok(says.some((m) => /left that as it is/.test(m.text)))
 })
+
+test('a step that asks its question and runs cleanly ends the turn; warnings get one more step', async () => {
+	for (const warn of [false, true]) {
+		const calls: number[] = []
+		const provider = {
+			name: 'scripted',
+			async complete(messages: any[], _tools: any, _signal: AbortSignal, handlers: any) {
+				calls.push(messages.length)
+				const step = calls.length - 1
+				const text = step === 0 ? 'A sage brand and a sunrise hero. Want a second step?' : ''
+				const toolCalls = step === 0 ? [{ id: 'c1', type: 'function', function: { name: 'create_screen', arguments: '{"id":"s","name":"S"}' } }, { id: 'c2', type: 'function', function: { name: 'focus_view', arguments: '{"shapeIds":["s"]}' } }] : []
+				if (text) handlers?.onSentence?.(text)
+				for (const c of toolCalls) handlers?.onToolCall?.(c)
+				return { text: text || null, toolCalls }
+			},
+		}
+		const room = new Room(`t_done_${warn}`, null)
+		const agent = new AgentSession(room, provider as any)
+		const bob = new FakeClient(() => ({ ok: true, data: warn ? { warnings: ['clipped'] } : {} }))
+		agent.addClient(bob as any)
+		bob.push({ type: 'hello', userId: 'bob', name: 'Bob', color: '#00f' })
+		bob.push({ type: 'user_message', text: 'design an onboarding screen', selection: [] })
+		await bob.waitIdle()
+		assert.equal(calls.length, warn ? 2 : 1, warn ? 'warnings need a fix step' : 'no extra round trip')
+	}
+})

@@ -602,7 +602,8 @@ function childWidths(node: LayoutNode, l: LayoutSpec, w: number): number[] {
 	if (l.mode === 'vertical' || l.mode === 'none') {
 		return cs.map((c) => {
 			const s = sizingOf(c, 'w')
-			if (s === 'fill' || (l.mode === 'vertical' && l.alignItems === 'stretch' && s === 'hug')) return inner
+			// Badges always hug: a status pill never stretches across its column.
+			if (s === 'fill' || (l.mode === 'vertical' && l.alignItems === 'stretch' && s === 'hug' && c.kind !== 'badge')) return inner
 			if (s === 'hug') return Math.min(naturalW(c), inner || naturalW(c))
 			return c.w
 		})
@@ -666,7 +667,9 @@ function place(node: LayoutNode, w: number, h: number, out: Map<string, LayoutBo
 	let cursor = (vertical ? pt : pl) + offset
 	cs.forEach((c, i) => {
 		const slack = innerCross - crosses[i]
-		const crossOff = l.alignItems === 'center' ? slack / 2 : l.alignItems === 'end' ? slack : 0
+		// On a desktop page, a fixed-width block in the page column (product shot, CTA band) is centered, never flush left.
+		const pageBlock = vertical && l.alignItems === 'stretch' && node.kind === 'screen' && w >= 1000 && sizingOf(c, 'w') === 'fixed' && slack > 1
+		const crossOff = l.alignItems === 'center' || pageBlock ? slack / 2 : l.alignItems === 'end' ? slack : 0
 		const crossPos = (vertical ? pl : pt) + crossOff
 		const box = vertical
 			? { x: crossPos, y: cursor, w: ws[i], h: hs[i] }
@@ -766,7 +769,8 @@ export function applySpec(props: UiProps, meta: UiMeta, spec: Partial<UiNodeSpec
 		else delete m.trailingIcon
 	}
 	for (const [key, axis] of [['width', 'w'], ['height', 'h']] as const) {
-		const v = spec[key]
+		// A badge never stretches: 'fill' on a status pill means "the cell", so it hugs its label.
+		const v = p.kind === 'badge' && spec[key] === 'fill' ? 'hug' : spec[key]
 		if (v === 'fill' || v === 'hug') m.sizing[axis] = v
 		else if (num(v) !== undefined) {
 			m.sizing[axis] = 'fixed'
@@ -821,6 +825,10 @@ export function specToTree(spec: UiNodeSpec, kind?: UiKind): UiTreeNode {
 			child.meta.order = i
 			return child
 		})
+	// A row of panels (cards, a sidebar beside content) defaults to equal heights, like a row of cards should.
+	if (meta.layout?.mode === 'horizontal' && spec.alignItems === undefined && children.length >= 2 && children.every((c) => isContainerKind(c.props.kind)) && children.some((c) => c.props.fill !== 'transparent' || c.props.stroke !== 'transparent')) {
+		meta.layout = { ...meta.layout, alignItems: 'stretch' }
+	}
 	return { id: String(spec.id ?? ''), props, meta, x: num(spec.x) ?? 0, y: num(spec.y) ?? 0, children }
 }
 
@@ -864,10 +872,21 @@ function fillTemplate(node: UiNodeSpec, vars: Record<string, unknown>, n: number
 	return out as UiNodeSpec
 }
 
+/**
+ * Padding the layout actually uses. Phone screens draw a status bar and home
+ * indicator, and maybe a tab bar: content keeps clear of them (safe areas).
+ */
+export function effectivePadding(node: Pick<UiTreeNode, 'props' | 'meta'>): LayoutSpec['padding'] {
+	const p = node.meta.layout?.padding ?? [0, 0, 0, 0]
+	if (node.props.kind !== 'screen') return p
+	const phone = isPhoneScreen(node.props.w, node.props.h)
+	const [t, r, b, l] = p
+	return [phone ? Math.max(t, 52) : t, r, node.meta.tabs ? Math.max(b, 98) : phone ? Math.max(b, 28) : b, l]
+}
+
 /** Converts a resolved tree into the plain tree layoutTree works on. */
 export function toLayoutNode(node: UiTreeNode): LayoutNode {
-	// A tab bar is drawn at the bottom of the screen: keep content clear of it.
-	const layout = node.meta.tabs && node.meta.layout ? { ...node.meta.layout, padding: [node.meta.layout.padding[0], node.meta.layout.padding[1], Math.max(node.meta.layout.padding[2], 98), node.meta.layout.padding[3]] as LayoutSpec['padding'] } : node.meta.layout
+	const layout = node.meta.layout ? { ...node.meta.layout, padding: effectivePadding(node) } : undefined
 	return {
 		id: node.id,
 		kind: node.props.kind,
@@ -923,7 +942,19 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const cssColor = (v: string) => (v.startsWith('$') ? `var(--${v.slice(1)})` : v || 'transparent')
 const FLEX_ALIGN: Record<string, string> = { start: 'flex-start', center: 'center', end: 'flex-end', stretch: 'stretch', 'space-between': 'space-between' }
 
+/** Brand marks are filled shapes (Google in its four colors), not stroked glyphs. */
+export const FILLED_ICONS = new Set(['google', 'apple'])
+const GOOGLE_COLORS = ['#4285F4', '#34A853', '#FBBC05', '#EA4335']
+/** The <path> elements of an icon (24x24 box) in the given color. */
+export function iconPaths(name: string, color: string, strokeWidth = 2): string {
+	const d = ICON_PATHS[name] ?? ICON_PATHS.star
+	if (name === 'google') return d.split(/(?= M)/).map((part, i) => `<path d="${part.trim()}" fill="${GOOGLE_COLORS[i % 4]}"/>`).join('')
+	if (FILLED_ICONS.has(name)) return `<path d="${d}" fill="${color}"/>`
+	return `<path d="${d}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`
+}
+
 export function iconSvg(name: string, size: number, color: string): string {
+	if (FILLED_ICONS.has(name)) return `<svg width="${size}" height="${size}" viewBox="0 0 24 24">${iconPaths(name, color)}</svg>`
 	const d = ICON_PATHS[name] ?? ICON_PATHS.star
 	return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`
 }
@@ -934,9 +965,11 @@ export function iconSvg(name: string, size: number, color: string): string {
  */
 export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.meta.theme ?? DEFAULT_THEME): string {
 	const vars = TOKENS.map((t) => `--${t}: ${resolveColor('$' + t, theme)};`).join(' ')
-	const node = (n: UiTreeNode, parent: LayoutSpec | null): string => {
+	const node = (n: UiTreeNode, parent: LayoutSpec | null, inPage = false): string => {
 		const p = n.props
 		const s: string[] = []
+		// Same rule as the layout engine: fixed-width blocks in a desktop page column are centered.
+		if (inPage && parent?.mode === 'vertical' && parent.alignItems === 'stretch' && n.meta.sizing.w === 'fixed') s.push('align-self: center')
 		const sz = n.meta.sizing
 		const dirMain = parent?.mode === 'horizontal' ? 'w' : 'h'
 		for (const axis of ['w', 'h'] as const) {
@@ -953,7 +986,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 		if (l) {
 			if (l.mode === 'none') s.push('position: relative')
 			else s.push('display: flex', `flex-direction: ${l.mode === 'horizontal' ? 'row' : 'column'}`, `gap: ${l.gap}px`, `align-items: ${FLEX_ALIGN[l.alignItems]}`, `justify-content: ${FLEX_ALIGN[l.justify]}`)
-			s.push(`padding: ${l.padding.map((v) => `${v}px`).join(' ')}`)
+			s.push(`padding: ${effectivePadding(n).map((v) => `${v}px`).join(' ')}`)
 		}
 		if (p.fill !== 'transparent' && p.kind !== 'toggle' && p.kind !== 'checkbox' && p.kind !== 'image') s.push(`background: ${cssColor(p.fill)}`)
 		if (p.kind === 'icon' || p.kind === 'badge') s.push('display: inline-flex', 'align-items: center', 'justify-content: center')
@@ -997,7 +1030,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 			case 'divider':
 				return `<hr ${style.replace('style="', 'style="border: 0; margin: 0; ')} />`
 			default: {
-				const inner = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map((c) => node(c, childParent)).join('\n')
+				const inner = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map((c) => node(c, childParent, p.kind === 'screen' && p.w >= 1000)).join('\n')
 				let chrome = ''
 				if (p.kind === 'screen') {
 					const ink = resolveColor('$text', theme)

@@ -4,7 +4,7 @@
 // Everything is pure and resolved against the screen's theme (never the OS
 // color scheme), so PNG exports and dark screens render exactly as on canvas.
 
-import { contrast, ICON_PATHS, mixHex, parseHex, resolveColor, type ThemeSpec } from './design.ts'
+import { contrast, ICON_PATHS, iconPaths, mixHex, parseHex, resolveColor, type ThemeSpec } from './design.ts'
 
 const FONT = "'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif"
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -94,7 +94,7 @@ function niceStep(x: number): number {
 	if (!(x > 0)) return 1
 	const e = 10 ** Math.floor(Math.log10(x))
 	const f = x / e
-	return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * e
+	return ([1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10].find((x) => f <= x + 1e-9) ?? 10) * e
 }
 
 /** Four gridlines (lo + i * step, i = 0..3) that contain the data. */
@@ -107,11 +107,14 @@ function chartScale(data: number[], line: boolean): { lo: number; step: number }
 	for (let i = 0; i < 6; i++) {
 		const l = Math.floor(lo / step) * step
 		if (l + step * 3 >= max) return { lo: l, step }
-		step = niceStep(step * 1.05)
+		step = niceStep(step * 1.01)
 	}
 	lo = Math.floor(lo / step) * step
 	return { lo, step }
 }
+
+/** Exposed for unit tests. */
+export const chartScaleForTest = (data: number[], line = false) => chartScale(data, line)
 
 /** Catmull-Rom spline through the points, as cubic Bézier segments. */
 function smoothPath(pts: [number, number][]): string {
@@ -147,7 +150,7 @@ export function chartSvg(spec: ChartSpec, w: number, h: number, theme: Partial<T
 	const line = spec.type === 'line'
 	const { lo, step } = chartScale(data, line)
 	const hi = lo + step * 3
-	const fmt = (v: number) => `${spec.prefix ?? ''}${compactNumber(v)}${spec.suffix ?? ''}`
+	const fmt = (v: number) => (v === 0 ? `${spec.prefix ?? ''}0` : `${spec.prefix ?? ''}${compactNumber(v)}${spec.suffix ?? ''}`)
 	const ticks = [0, 1, 2, 3].map((i) => lo + step * i)
 	const tickLabels = ticks.map(fmt)
 	const hasLabels = spec.labels.some(Boolean)
@@ -266,7 +269,8 @@ export function artSvg(seed: string, w: number, h: number, theme: Partial<ThemeS
 		const sx = w * (0.55 + rnd() * 0.2)
 		const sy = h * 0.44
 		const sr = Math.min(w, h) * 0.15
-		const sun = dark ? mixHex(a2, '#ffffff', 0.55) : mixHex(a2, '#ffffff', 0.35)
+		// A warm sun against the brand-tinted hills reads as morning light whatever the brand hue.
+		const sun = dark ? mixHex('#ffd6b8', p, 0.2) : mixHex('#ffb08a', p, 0.12)
 		blob('glow', sx, sy, sr * 3.2, sun, dark ? 0.35 : 0.55)
 		body.push(`<circle cx="${r1(sx)}" cy="${r1(sy)}" r="${r1(sr)}" fill="${sun}"/>`)
 		const hill = (y: number, amp: number, phase: number, color: string) => {
@@ -373,7 +377,7 @@ export function tabBarSvg(w: number, tabs: TabsSpec, theme: Partial<ThemeSpec>):
 		.map((t, i) => {
 			const cx = slot * (i + 0.5)
 			const color = i === tabs.active ? c('$primary') : c('$muted')
-			return `<g transform="translate(${r1(cx - 12)} 10)"><path d="${ICON_PATHS[t.icon] ?? ICON_PATHS.home}" fill="none" stroke="${color}" stroke-width="${i === tabs.active ? 2.2 : 1.8}" stroke-linecap="round" stroke-linejoin="round"/></g><text x="${r1(cx)}" y="50" text-anchor="middle" font-size="11" font-weight="${i === tabs.active ? 600 : 500}" fill="${color}">${esc(t.label)}</text>`
+			return `<g transform="translate(${r1(cx - 12)} 10)">${iconPaths(t.icon, color, i === tabs.active ? 2.2 : 1.8)}</g><text x="${r1(cx)}" y="50" text-anchor="middle" font-size="11" font-weight="${i === tabs.active ? 600 : 500}" fill="${color}">${esc(t.label)}</text>`
 		})
 		.join('')
 	return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${TAB_BAR_H}" viewBox="0 0 ${w} ${TAB_BAR_H}" style="display:block" font-family="${esc(FONT)}"><rect width="${w}" height="${TAB_BAR_H}" fill="${c('$surface')}"/><rect width="${w}" height="1" fill="${c('$border')}"/>${items}</svg>`

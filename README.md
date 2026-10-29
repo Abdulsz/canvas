@@ -27,8 +27,10 @@ Production build: `npm run build && npm start` (the server serves `client/dist` 
 Tap the mic in the floating **voice dock** (or the Agent tab) once and just talk. The mic stays open, hands-free.
 
 - **Listening:** the browser records with echo cancellation and detects when you start and stop talking. Each utterance goes to Grok speech-to-text (`POST /api/stt`), biased toward design vocabulary.
-- **Designing:** the agent streams Grok's reply. Each step is one or two short spoken sentences plus that step's tool calls. Tool calls run as soon as they stream in, and the next step waits for the current line to finish, so the canvas stays in step with the voice.
-- **No dead air:** a short cached acknowledgement ("Sure.") plays the moment you stop talking. A fast non-reasoning model (`XAI_OPENER_MODEL`) speaks the first sentence about 1s later while the main model prepares the design, and is told what was already said.
+- **Designing:** the agent streams Grok's reply. Each step is one or two short spoken sentences plus that step's tool calls. Tool calls run as soon as they stream in, and the next step waits for the current line to finish, so the canvas stays in step with the voice. A sentence is spoken as soon as the model pauses after it (it doesn't wait for the tool call that follows).
+- **Building in pieces:** xAI delivers each tool call whole, and the model writes about 100 tokens a second, so a screen appears section by section: a small `create_screen` first, then one `add_nodes` per section in the same response. Specs stay short: defaults are omitted, repeated rows are one `template` + `items`, and higher-level kinds (`badge`, `chart`, icon tiles, tab bars, the automatic status bar) replace dozens of nodes. When the model ends a building step with its question and every call ran cleanly, the turn ends without another round trip.
+- **Two models:** new screens and rebuilds use `XAI_MODEL` at `XAI_REASONING_EFFORT` (`minimal` by default: `low` sometimes thinks for 20s before drawing). Small edits to existing screens (colors, spacing, text, theme, adding a control) go to the fast non-reasoning `XAI_EDIT_MODEL`, which changes the canvas in about 1.5s.
+- **No dead air:** a short cached acknowledgement ("Sure.") plays the moment you stop talking. A fast non-reasoning model (`XAI_OPENER_MODEL`) runs in parallel with the designer and speaks one sentence about what it is about to do about 1s later. It may not describe visuals (sentences naming colors, imagery or layout the request didn't mention are dropped), and the designer skips a first sentence that repeats it.
 - **Speaking:** the server starts Grok text-to-speech right away and streams the audio to everyone in the room (`GET /api/tts/:id`). The dock captions the agent's current line.
 - **Steering:** the agent builds a sensible first draft instead of asking questions, then ends with one focused question ("Want social login too?").
 - **Interrupting:** talking over the agent cuts its voice off, and your request takes over the turn.
@@ -49,9 +51,13 @@ The **Live voice** switch in the Agent tab uses xAI's [speech-to-speech API](htt
 Everything is one custom tldraw shape, `ui` (`shared/design.ts`, rendered by `client/src/design/UiShapeUtil.tsx`, registered in the server schema too).
 
 - **Screens** are top-level artboards (`kind: 'screen'`) sized from device presets: iPhone 390×844, Android 412×915, tablet 834×1194, desktop 1440×1024, watch 198×242. New screens go to the right of the existing ones.
-- **Nodes** nest inside screens as real tldraw children: `frame`, `text`, `button`, `input`, `image`, `icon`, `avatar`, `toggle`, `checkbox`, `divider`, `rect`. Kind defaults (`KIND_DEFAULTS`) keep specs short, e.g. a button is 48px tall, hugs its label and uses `$primary`.
+- **Nodes** nest inside screens as real tldraw children: `frame`, `text`, `button`, `input`, `image`, `icon`, `avatar`, `toggle`, `checkbox`, `divider`, `rect`, `badge`, `chart`. Kind defaults (`KIND_DEFAULTS`) keep specs short, e.g. a button is 48px tall, hugs its label and uses `$primary`; a badge is a 13/600 pill that always hugs its label.
+- **Generated visuals** (`shared/visuals.ts`, SVG shared by the canvas and the HTML export): `image` nodes are abstract art in the brand's hues (soft gradient blobs, rings, or a sun over layered hills, picked from the alt text and stable per node), never a gray box. `chart` nodes draw a bar or line chart from `data` / `labels` (kept in `meta.chart`) with four labelled gridlines and the highlighted value (default: the peak). An `icon` with a fill is an icon tile. Google and Apple marks are filled brand glyphs.
+- **Phone chrome:** phone-sized screens draw an iOS status bar and home indicator, and an optional bottom tab bar (`create_screen` `tabs` + `activeTab`, in `meta.tabs`). Layout keeps content clear of them (`effectivePadding`).
+- **Templates:** a frame with `template` + `items` repeats the template once per item, replacing `{key}` in its strings (`expandTemplates`); a field that is just `"{key}"` is dropped when the item lacks it, so only the active nav item needs a fill.
+- **Growing screens:** when the agent's content doesn't fit, the screen grows taller (like a scrolling page) instead of clipping. On desktop pages, fixed-width blocks in the page column are centered, rows of cards default to equal heights.
 - **Auto layout** works like Figma's: containers have `layout` vertical / horizontal / none, `gap`, `padding`, `alignItems`, `justify`; children size `fixed`, `hug` or `fill`. The layout engine is pure and shared (`layoutTree`, unit tested); the executor re-runs it on the affected screen after every structural edit.
-- **Tokens and themes:** colors are hex or tokens (`$bg $surface $surfaceAlt $primary $onPrimary $text $muted $border`) resolved against the screen's `meta.theme` (`light` / `dark`, plus a primary color). Dark mode is one `set_theme` call; a new screen inherits the latest screen's theme.
+- **Tokens and themes:** colors are hex or tokens (`$bg $surface $surfaceAlt $primary $primarySoft $onPrimary $text $muted $border`, and status pairs `$success/$successSoft $warning/$warningSoft $danger/$dangerSoft`) resolved against the screen's `meta.theme` (`light` / `dark`, plus a primary color). Dark mode is one `set_theme` call; a new screen inherits the latest screen's theme.
 - **Authorship:** each tab stamps `meta.author` / `meta.updatedBy` (`{ kind: 'user' | 'agent', id, name }`) on what it creates or edits (`client/src/agent/authorship.ts`).
 
 ## Agent tools
@@ -65,7 +71,7 @@ Defined in `shared/tools.ts`, executed in a participant's browser by `CanvasExec
 | Feedback | `highlight_shapes`, `add_comment` (`issue`, `suggestion`, `praise`, `question`, addressed to a collaborator) |
 | Live voice only | `look_at_board` |
 
-Tool results include warnings when content overflows its container, so the model can fix it. Modes: **On request** (Critique button or voice), **Proactive** (comments after collaborators pause for `IDLE_MS`) and **Guided** (the agent leads, one decision at a time).
+Tool results include warnings when content overflows its row or a label is clipped, so the model can fix it. Exports (Export PNG, Copy as PNG, the agent's `get_canvas_image`) paint each screen's own themed background: tldraw skips the frame itself when exporting a single frame, so `UiShapeUtil` routes single-screen exports through the normal path. Critique notes use the UI font, scale with the zoom, and are placed beside the screen (right, then left) clear of screens and their name labels, preferring spots in view. Modes: **On request** (Critique button or voice), **Proactive** (comments after collaborators pause for `IDLE_MS`) and **Guided** (the agent leads, one decision at a time).
 
 **Respecting people's work:** `AgentSession.guard` (server) checks every call against the server's copy of the shapes. Changing or deleting a node a collaborator authored needs someone to click **Allow** first. Annotations never touch their nodes.
 
@@ -104,7 +110,8 @@ Tool calls run in a connected browser because layout and image export need a rea
 | `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
 | `XAI_MODEL` | `grok-4.7` | Chat model with tool calling and image input (also the vision model for `/api/describe`) |
 | `XAI_OPENER_MODEL` | `grok-4.20-non-reasoning` | Fast model that speaks the first sentence while the main model designs (`off` disables) |
-| `XAI_REASONING_EFFORT` | `low` | Reasoning effort for conversational turns (`XAI_REVIEW_REASONING_EFFORT`, also `low` by default, for critiques: `medium` found the same issues but left about 10s of silence) |
+| `XAI_REASONING_EFFORT` | `minimal` | Reasoning effort for design turns (`XAI_REVIEW_REASONING_EFFORT`, `low` by default, for critiques: `medium` found the same issues but left about 10s of silence) |
+| `XAI_EDIT_MODEL` | `grok-4.20-non-reasoning` | Fast model for small edits to existing screens (`off` sends everything to `XAI_MODEL`) |
 | `XAI_VOICE` | `ara` | Grok voice (`GET https://api.x.ai/v1/tts/voices` lists them) |
 | `XAI_REALTIME_MODEL` | `grok-voice-latest` | Speech-to-speech model for Live voice |
 | `REALTIME` | `on` | `off` hides the Live voice option |
@@ -116,7 +123,7 @@ Tool calls run in a connected browser because layout and image export need a rea
 | `PERSIST` | `true` | `false` keeps rooms in memory only |
 | `IDLE_MS` | `4000` | Proactive mode: how long collaborators must pause before the agent looks |
 | `AGENT_DEBUG` | (off) | Log each agent step and tool call |
-| `VITE_TLDRAW_LICENSE_KEY` | (none) | tldraw license key, needed for production deployments |
+| `VITE_TLDRAW_LICENSE_KEY` | (none) | tldraw license key, needed for production deployments (without it tldraw shows its "Get a license" notice, which must stay) |
 
 The server reads `.env` from the repo root on start.
 
@@ -147,7 +154,7 @@ Set `CHROMIUM_PATH` to use a preinstalled Chromium and `OUT_DIR` for screenshots
 
 ## Status and known gaps
 
-- **Verified live against xAI** (grok-4.7, opener grok-4.20-non-reasoning, voice ara, grok-voice-latest; Oct 2026): `test:voice`, `test:review`, `test:live`, `test:realtime-live`, and `test:realtime`'s vision step. Typical numbers from `test:live` (typed turns, measured from sending): cached ack 0.1s, Grok's own voice 1.8-2.5s, first canvas change 2-5s for edits and 7-15s for a new screen (the whole create_screen tree streams in one call), turn done 9-20s (mostly the voice finishing). Critique: voice after 6-11s. Voice test: first audio about 1.3s after the user stops talking, longest silence about 4s.
+- **Verified live against xAI** (grok-4.7, opener grok-4.20-non-reasoning, voice ara, grok-voice-latest; Oct 2026): `test:voice`, `test:review`, `test:live`, `test:realtime-live`, and `test:realtime`'s vision step. Typical numbers (typed turns, measured from sending, Oct 29 2026): cached ack 0.1s, opener voice about 1-2s, the designer's own first sentence 4-8s, first canvas change 1.3-1.7s for edits and 7-15s for a new screen (onboarding 8-11s, settings 5-8s, landing 10-12s, desktop dashboard 13-16s; it then fills in section by section), turn done 15-30s (mostly the voice finishing). Before this round (one big create_screen, `low` effort, opener awaited before the designer started) new screens took 24-43s. Critique: voice after 6-11s. Voice test: first audio about 1.3s after the user stops talking, longest silence about 4s.
 - **Live voice works against xAI's real WebSocket:** client secret, `session.update`, server VAD, transcription, streamed voice (about 1s after VAD detects the end of the question) and function calls that build a screen.
 - **Speech can still recap.** Grok sometimes restates what it just built before its closing question, and the fast opener occasionally announces details the design then doesn't use.
 - **Hard-coded colors:** for "make the button brown" Grok sets a hex fill, which (correctly) doesn't follow dark mode. `$primary` is lightened automatically in dark mode when the brand color is too dark to read.

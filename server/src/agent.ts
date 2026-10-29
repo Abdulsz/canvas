@@ -123,7 +123,7 @@ export class AgentSession {
 				return
 			}
 			case 'check_work':
-				this.broadcast({ type: 'chat', from: client.name, text: '✅ Critique' })
+				this.broadcast({ type: 'chat', from: client.name, text: 'Asked for a critique' })
 				this.trigger({ kind: 'check_work', from: client, shapeIds: msg.shapeIds ?? [] })
 				return
 			case 'set_mode':
@@ -237,30 +237,42 @@ export class AgentSession {
 			}
 			const effort: CompletionOptions['reasoningEffort'] =
 				trigger.kind === 'message'
-					? ((process.env.XAI_REASONING_EFFORT as any) ?? 'low')
+					? ((process.env.XAI_REASONING_EFFORT as any) ?? 'minimal')
 					: ((process.env.XAI_REVIEW_REASONING_EFFORT as any) ?? 'low')
-			// Fast spoken opener: starts answering ~1s after the question, while the
-			// drawing model (slower, it reasons) prepares the first drawing step.
+			// Small edits to existing screens go to the fast (non-reasoning) model:
+			// it starts drawing in ~2s instead of ~7s. New screens and rebuilds keep the designer model.
+			const editModel = process.env.XAI_EDIT_MODEL === 'off' ? undefined : (process.env.XAI_EDIT_MODEL ?? 'grok-4.20-non-reasoning')
+			const model = trigger.kind === 'message' && editModel && this.provider.name.startsWith('xai:') && isQuickEdit(trigger.text, this.hasScreens()) ? editModel : undefined
+			// Fast spoken opener: starts answering ~1s after the question. It runs in
+			// parallel with the drawing model (which reasons, so it is slower to say
+			// anything); the drawing model's lines play after it.
 			let opener = ''
+			let nudged = false
+			const openerLines: Promise<void>[] = []
+			let openerDone: Promise<void> = Promise.resolve()
 			if (trigger.kind === 'message' && this.provider.opener) {
 				const afterAck = speech
-				const lines: Promise<void>[] = []
 				this.status('Thinking…')
-				try {
-					opener = await this.provider.opener(this.history, `${trigger.from.name}: ${trigger.text}`, abort.signal, (sentence) => {
+				openerDone = this.provider
+					.opener(this.history, `${trigger.from.name}: ${trigger.text}`, abort.signal, (sentence) => {
 						const line = this.prepareLine(sentence)
-						lines.push(afterAck.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
+						openerLines.push(afterAck.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 					})
-				} catch (err) {
-					if (!abort.signal.aborted) console.warn('[agent] opener failed:', (err as Error).message)
-				}
-				if (lines.length) speech = Promise.all(lines).then(() => undefined)
+					.then((text) => {
+						opener = text
+					})
+					.catch((err) => {
+						if (!abort.signal.aborted) console.warn('[agent] opener failed:', (err as Error).message)
+					})
+				const ackDone = speech
+				speech = openerDone.then(() => (openerLines.length ? Promise.all(openerLines).then(() => undefined) : ackDone))
 			}
 			this.status('Looking at the board…')
 			const triggerMessage = await this.buildTriggerMessage(trigger, driver, abort.signal)
-			const said = [ack, opener.trim()].filter(Boolean).join(' ')
-			const note = opener.trim()
-				? `(You already said this out loud: "${said}". Never repeat or paraphrase it. Start this step with one short NEW sentence about a specific design choice (it plays while the screen is being built), then the tool calls. Your final reply is just your one question.)`
+			const note = model
+				? `(A quick acknowledgement of the request is already playing. Make the tool calls first. Then say at most one short sentence naming what changed and where (which screen, or all screens), without numbers or pixel values, and end with one question.)`
+				: this.provider.opener && trigger.kind === 'message'
+				? `(A quick acknowledgement of the request is already playing ("${ack} ..."). Don't acknowledge, greet or restate the request; your first sentence names a specific design choice.)`
 				: `(The user just heard you say "${ack}". Now speak your first short sentence while you design; don't repeat "${ack}".)`
 			if (ack && typeof triggerMessage.content === 'string') triggerMessage.content += `\n${note}`
 			else if (ack && Array.isArray(triggerMessage.content)) triggerMessage.content.push({ type: 'text', text: note })
@@ -279,6 +291,7 @@ export class AgentSession {
 				let tools: Promise<void> = step === 0 ? Promise.resolve() : previous
 				const results: { call: ToolCall; result: ToolResult }[] = []
 				let toolError: unknown = null
+				let firstSentence = true
 				const { text, toolCalls } = await this.provider.complete(
 					[{ role: 'system', content: SYSTEM_PROMPT }, ...this.history],
 					ALL_TOOLS,
@@ -288,7 +301,15 @@ export class AgentSession {
 						// after the previous step's speech.
 						onSentence: (sentence) => {
 							if (/^SILENT\b/.test(sentence) || isToolChatter(sentence)) return
+							// The opener may already have said the same thing.
+							if (step === 0 && firstSentence && opener && similar(sentence, opener)) {
+								firstSentence = false
+								debug(`skipped (repeats the opener): ${sentence.slice(0, 40)}`)
+								return
+							}
+							firstSentence = false
 							debug(`sentence: ${sentence.slice(0, 40)}`)
+							sentence = honestSpeech(sentence)
 							const line = this.prepareLine(sentence)
 							lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 						},
@@ -305,7 +326,7 @@ export class AgentSession {
 							})
 						},
 					},
-					{ reasoningEffort: effort }
+					model ? { model, conversationId: `${this.room.id}` } : { reasoningEffort: effort, conversationId: `${this.room.id}` }
 				)
 				debug(`stream done: ${toolCalls.length} tool call(s)`)
 				// Safety net: if Grok drew without saying anything, narrate what appeared so the
@@ -327,13 +348,38 @@ export class AgentSession {
 				if (text || toolCalls.length) {
 					this.pushHistory({ role: 'assistant', content: text ?? '', ...(toolCalls.length ? { tool_calls: toolCalls } : {}) })
 				}
-				if (!toolCalls.length) break
+				if (!toolCalls.length) {
+					// A design request answered with words only (it happens at low reasoning effort):
+					// nudge once to actually build it, without speaking again.
+					if (step === 0 && !nudged && trigger.kind === 'message' && !model && /\b(design|build|create|make|add|sketch|draw)\b/i.test(trigger.text)) {
+						nudged = true
+						this.pushHistory({ role: 'user', content: '(Nothing is on the canvas yet. Build it now with tool calls, without speaking again.)' })
+						continue
+					}
+					break
+				}
 
 				const images: ContentPart[] = []
+				let clean = true
 				for (const call of toolCalls) {
 					const result = results.find((r) => r.call.id === call.id)?.result ?? { ok: false, error: 'Not run.' }
 					this.pushHistory({ role: 'tool', tool_call_id: call.id, content: formatToolResult(result) })
 					if (result.image) images.push({ type: 'image_url', image_url: { url: result.image, detail: 'high' } })
+					if (!result.ok || (result.data as any)?.warnings?.length || READING_TOOLS.has(call.function.name)) clean = false
+				}
+				// A build step is finished when it ends with focus_view (the prompt's order); a step of
+				// small edits (no create_screen / add_nodes) is finished as it is.
+				const names = toolCalls.map((c) => c.function.name)
+				if (names.some((n) => n === 'create_screen' || n === 'add_nodes' || n === 'duplicate_screen') && !names.includes('focus_view')) clean = false
+				// The model already asked its closing question and every call went through
+				// cleanly: the turn is done, without another round trip to the model.
+				const asked = !!text && /\?["')\]]*\s*$/.test(text.trim())
+				if (asked && clean && !images.length) {
+					debug('done: question asked and tools ran cleanly')
+					break
+				}
+				if (asked && !clean) {
+					this.pushHistory({ role: 'user', content: '(Tool results are above. You already asked your question this turn: fix any warnings or errors with tool calls and do not ask it again; if nothing needs fixing, reply with an empty message.)' })
 				}
 				// Tool messages can't carry images in this API, so attach them as a follow-up user message.
 				if (images.length) {
@@ -355,6 +401,11 @@ export class AgentSession {
 			this.queued = null
 			if (next) void this.runTurn(next)
 		}
+	}
+
+	private hasScreens() {
+		for (const s of this.room.shapes.values()) if ((s as any).type === 'ui' && (s as any).props?.kind === 'screen') return true
+		return false
 	}
 
 	/**
@@ -480,7 +531,7 @@ export class AgentSession {
 		}
 
 		const confirm = this.guard(name, args)
-		if (process.env.AGENT_DEBUG) console.log(`[agent] ${name} ${JSON.stringify(args).slice(0, 300)}${confirm ? ' (needs confirmation)' : ''}`)
+		if (process.env.AGENT_DEBUG) console.log(`[agent] ${name} (${call.function.arguments.length} chars) ${JSON.stringify(args).slice(0, 300)}${confirm ? ' (needs confirmation)' : ''}`)
 		const result = await this.callClient(driver, name, args, this.abort?.signal, confirm)
 		if (process.env.AGENT_DEBUG && (!result.ok || (result.data as any)?.warnings)) console.log(`[agent] ${name} -> ${result.ok ? JSON.stringify((result.data as any).warnings) : result.error}`)
 		if (name === 'focus_view' && result.ok && args.scope === 'everyone') {
@@ -548,6 +599,38 @@ export class AgentSession {
 	}
 }
 
+/**
+ * A request that tweaks what is already on the canvas (colors, spacing, text,
+ * theme, adding a control) rather than designing a new screen or rebuilding one.
+ */
+export function isQuickEdit(text: string, hasScreens: boolean): boolean {
+	if (!hasScreens) return false
+	const t = text.toLowerCase()
+	if (/\b(redo|rebuild|redesign|rethink|from scratch|critique|review|feedback|what do you think)\b/.test(t)) return false
+	const screenish = /\b(screens?|pages?|dashboards?|landing|onboarding|flows?|apps?|website|site|views?|checkout|profile|settings|login|sign ?up|home ?screen)\b/.test(t)
+	const building = /\b(design|build|create|make|add|sketch|draw|another|new|generate)\b/.test(t)
+	return !(screenish && building && !/\b(to|on|in) the\b/.test(t))
+}
+
+/** Drops claims the canvas can't back up ("a live chart", "real-time updates"): designs are static. */
+export function honestSpeech(sentence: string): string {
+	return sentence.replace(/\b(live|real-time|realtime|animated|interactive)\s+(?=[a-z])/gi, '').replace(/\s+that updates? (every|in) (real[- ]?time|(a |one )?(second|minute|day)s?)/gi, '')
+}
+
+/** Tools that only read: the model needs another step to use what they return. */
+const READING_TOOLS = new Set(['get_canvas_state', 'get_canvas_image', 'get_recent_changes', 'get_participants'])
+
+/** Rough "says the same thing" check (word overlap) between a sentence and what was already spoken. */
+export function similar(a: string, b: string): boolean {
+	const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length > 3))
+	const x = words(a)
+	const y = words(b)
+	if (!x.size) return false
+	let shared = 0
+	for (const w of x) if (y.has(w)) shared++
+	return shared / x.size >= 0.6
+}
+
 /** Tool-call chatter the model sometimes leaks into its text ("55.0 is not a valid tool."): never speak it. */
 export function isToolChatter(sentence: string): boolean {
 	return /\b(not a valid tool|tool_calls?|function call|invalid arguments?)\b|^[{[]|"\w+"\s*:/i.test(sentence)
@@ -579,5 +662,5 @@ function formatToolResult(r: ToolResult): string {
 		? { ok: true, ...(r.data && typeof r.data === 'object' ? r.data : { result: r.data ?? 'done' }), ...(r.image ? { image: 'attached below' } : {}) }
 		: { ok: false, error: r.error }
 	const s = JSON.stringify(body)
-	return s.length > 12_000 ? `${s.slice(0, 12_000)}…(truncated)` : s
+	return s.length > 40_000 ? `${s.slice(0, 40_000)}…(truncated)` : s
 }

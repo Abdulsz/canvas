@@ -38,7 +38,11 @@ export interface LLMProvider {
 
 export type CompletionOptions = {
 	/** grok-4.x reasoning depth. "low" answers in ~1s instead of ~4s, which matters for conversation. */
-	reasoningEffort?: 'low' | 'medium' | 'high'
+	reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high'
+	/** Overrides the provider's model for this call (no reasoning effort is sent then). */
+	model?: string
+	/** Stable per-conversation id: xAI routes requests with the same id to warm prompt caches. */
+	conversationId?: string
 }
 
 /** Accumulates OpenAI-style streamed deltas and reports text and tool calls as soon as each is complete. */
@@ -70,6 +74,19 @@ export class StreamAssembler {
 			cut = rest.length
 		}
 		this.spokenUpTo += cut
+	}
+
+	/**
+	 * The text so far ends with a complete sentence but nothing has streamed for a
+	 * moment (the model is now writing a tool call, which arrives in one piece):
+	 * speak it now instead of waiting for the tool call.
+	 */
+	flushIdleSentence() {
+		if (this.textSent) return
+		const rest = this.text.slice(this.spokenUpTo)
+		if (!/[.!?]["')\]]*\s*$/.test(rest) || rest.trim().length < 2) return
+		this.handlers.onSentence?.(rest.trim())
+		this.spokenUpTo = this.text.length
 	}
 
 	private flushText() {
@@ -126,9 +143,19 @@ export class StreamAssembler {
 }
 
 export const OPENER_PROMPT = `You are ${AGENT_NAME}, a warm senior product designer pair-designing app screens out loud with a collaborator on a shared canvas.
-Reply to the collaborator's latest message with one or two short spoken sentences (under 30 words in total) that start answering, in plain speech with no markdown or lists.
-A separate process builds the design on the canvas right after you speak, so say what you are about to do ("Switching the login to dark mode now."), never that it is already done, and don't invent specifics (labels, colors, names) the design might not use. Don't ask a question: the designer asks one at the end.
+Reply to the collaborator's latest message with ONE short spoken sentence (under 15 words) that starts answering, in plain speech with no markdown or lists.
+Another process decides the actual design and builds it right after you speak. So only say, in your own words, WHAT you are about to make or change ("Okay, a calm onboarding screen for the meditation app, coming up."). Never describe how it will look (no colors, imagery, illustrations, backgrounds, layout, labels or names), never claim it is done, and don't ask a question.
+New screens are added next to the existing ones; nothing is replaced or switched unless they ask for that. Match the scope they asked for: "everything" means all screens; don't name a screen they didn't name.
+Examples: "Okay, a settings screen with those three sections, coming up." "Sure, giving the cards more room and trying a green accent." "On it, switching everything to dark mode."
 If the message is just small talk or thanks, reply briefly and naturally.`
+
+const VISUAL_WORDS = /\b(navy|teal|sage|emerald|indigo|violet|purple|blue|green|red|orange|yellow|pink|brown|gold|black|white|gr[ae]y|pastel|neon|gradient|background|header|illustration|photo|image|picture|landscape|icon|logo|font|serif|card|chart|graph|grid|sidebar|button|minimal|sleek|clean|serene|calm|soft|bold|dusk|dawn|cozy|warm|dark|light|deep|charcoal)s?\b|\b(added|done|ready|now has|is now|are now|applied)\b/gi
+
+/** True when an opener sentence describes visuals the request didn't mention (only the design model knows those). */
+export function inventsVisuals(sentence: string, request: string): boolean {
+	const asked = request.toLowerCase()
+	return (sentence.match(VISUAL_WORDS) ?? []).some((w) => !asked.includes(w.toLowerCase()))
+}
 
 export class GrokProvider implements LLMProvider {
 	readonly name: string
@@ -158,7 +185,7 @@ export class GrokProvider implements LLMProvider {
 			body: JSON.stringify({
 				model: this.openerModel,
 				stream: true,
-				max_tokens: 90,
+				max_tokens: 60,
 				messages: [{ role: 'system', content: OPENER_PROMPT }, ...recent, { role: 'user', content: question }],
 			}),
 		})
@@ -169,7 +196,7 @@ export class GrokProvider implements LLMProvider {
 		let count = 0
 		const assembler = new StreamAssembler({
 			onSentence: (sentence) => {
-				if (count >= 2 || /\?["')\]]*$/.test(sentence)) return
+				if (count >= 2 || /\?["')\]]*$/.test(sentence) || inventsVisuals(sentence, question)) return
 				count++
 				spoken = spoken ? `${spoken} ${sentence}` : sentence
 				onSentence(sentence)
@@ -196,12 +223,13 @@ export class GrokProvider implements LLMProvider {
 			method: 'POST',
 			// Never let a stalled request freeze the conversation.
 			signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
-			headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
+			headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}`, ...(opts?.conversationId ? { 'x-grok-conv-id': opts.conversationId } : {}) },
 			body: JSON.stringify({
-				model: this.model,
+				model: opts?.model ?? this.model,
 				messages,
 				stream: true,
-				...(opts?.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
+				// Non-reasoning models reject the parameter.
+				...(opts?.reasoningEffort && !/non-reasoning/.test(opts?.model ?? this.model) ? { reasoning_effort: opts.reasoningEffort } : {}),
 				tools: tools.map((t) => ({ type: 'function', function: t })),
 				tool_choice: 'auto',
 			}),
@@ -212,19 +240,29 @@ export class GrokProvider implements LLMProvider {
 		const assembler = new StreamAssembler(handlers)
 		const decoder = new TextDecoder()
 		let buf = ''
-		for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-			buf += decoder.decode(chunk, { stream: true })
-			let nl: number
-			while ((nl = buf.indexOf('\n')) >= 0) {
-				const line = buf.slice(0, nl).trim()
-				buf = buf.slice(nl + 1)
-				if (!line.startsWith('data:')) continue
-				const data = line.slice(5).trim()
-				if (data === '[DONE]') continue
-				const json = JSON.parse(data)
-				if (json.error) throw new Error(`xAI API error: ${JSON.stringify(json.error).slice(0, 500)}`)
-				assembler.push(json.choices?.[0]?.delta)
+		let idle: NodeJS.Timeout | null = null
+		try {
+			for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+				buf += decoder.decode(chunk, { stream: true })
+				let nl: number
+				while ((nl = buf.indexOf('\n')) >= 0) {
+					const line = buf.slice(0, nl).trim()
+					buf = buf.slice(nl + 1)
+					if (!line.startsWith('data:')) continue
+					const data = line.slice(5).trim()
+					if (data === '[DONE]') continue
+					const json = JSON.parse(data)
+					if (json.error) throw new Error(`xAI API error: ${JSON.stringify(json.error).slice(0, 500)}`)
+					const delta = json.choices?.[0]?.delta
+					assembler.push(delta)
+					if (typeof delta?.content === 'string' && delta.content) {
+						if (idle) clearTimeout(idle)
+						idle = setTimeout(() => assembler.flushIdleSentence(), 350)
+					}
+				}
 			}
+		} finally {
+			if (idle) clearTimeout(idle)
 		}
 		return assembler.finish()
 	}

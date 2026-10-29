@@ -199,7 +199,19 @@ export class CanvasExecutor {
 		if (!root || !this.editor.getShape(root.id)) return
 		const editor = this.editor
 		const tree = this._toTree(editor.getShape(root.id) as UiShape)
-		const boxes = layoutTree(toLayoutNode(tree), { measure: measureTextDom })
+		const node = toLayoutNode(tree)
+		let boxes = layoutTree(node, { measure: measureTextDom })
+		// A screen whose content doesn't fit grows taller, like a scrolling page in Figma,
+		// instead of clipping it (it never shrinks on its own).
+		if (!this.hooks.asUser && tree.props.kind === 'screen' && node.layout && node.layout.mode !== 'none') {
+			const need = layoutTree({ ...node, sizing: { ...node.sizing, h: 'hug' } }, { measure: measureTextDom }).get(node.id)?.h ?? 0
+			// A long page (taller than any device) hugs its content, so it never ends in a blank band.
+			const longPage = node.w >= 1000 && node.h > 1100 && need < node.h - 40
+			if (need > node.h + 1 || longPage) {
+				node.h = Math.ceil(longPage ? Math.max(1024, need) : need)
+				boxes = layoutTree(node, { measure: measureTextDom })
+			}
+		}
 		const updates: TLShapePartial[] = []
 		const walk = (n: UiTreeNode, isRoot: boolean) => {
 			const b = boxes.get(n.id)
@@ -328,8 +340,9 @@ export class CanvasExecutor {
 	}
 
 	/** Warnings about content that doesn't fit, so the model can fix it. */
-	private _warnings(root: UiShape): string[] {
+	private _warnings(stale: UiShape): string[] {
 		const warnings: string[] = []
+		const root = (this.editor.getShape(stale.id) as UiShape | undefined) ?? stale
 		const walk = (s: UiShape) => {
 			const kids = this._children(s)
 			if (isContainerKind(s.props.kind) && kids.length) {
@@ -865,7 +878,7 @@ export class CanvasExecutor {
 		const tb = target ? editor.getShapePageBounds(target) : null
 		const sb = screen ? editor.getShapePageBounds(screen) : tb
 		const zoom = editor.getZoomLevel()
-		const scale = Math.min(1.8, Math.max(1, 0.5 / Math.max(zoom, 0.05)))
+		const scale = Math.min(2.2, Math.max(1, 0.6 / Math.max(zoom, 0.05)))
 		const NOTE = 200 * scale
 		const view = editor.getViewportPageBounds()
 		const ignore = new Set<string>([id, ...(target ? [target.id] : [])])

@@ -19,7 +19,7 @@ const region = {
 
 const colorValue = (what: string) => ({
 	type: 'string',
-	description: `${what}. Prefer theme tokens so light/dark mode works: $bg $surface $surfaceAlt $primary $onPrimary $text $muted $border. Also accepts '#rrggbb' or 'transparent'.`,
+	description: `${what}. Prefer theme tokens so light/dark mode works: $bg $surface $surfaceAlt $primary $primarySoft $onPrimary $text $muted $border $success $successSoft $warning $warningSoft $danger $dangerSoft. Also accepts '#rrggbb' or 'transparent'.`,
 })
 const sizeValue = (axis: string) => ({
 	description: `${axis}: a number of px (fixed), 'fill' (take the remaining space in the parent) or 'hug' (shrink to content). Defaults depend on type.`,
@@ -65,18 +65,25 @@ const nodeProps = {
 	shadow: { type: 'string', enum: ['none', 'sm', 'md', 'lg'] },
 	opacity: { type: 'number', description: '0..1' },
 	checked: { type: 'boolean', description: 'State of a toggle or checkbox.' },
+	trailingIcon: { type: 'string', enum: ICONS, description: "Input only: icon at the end (eye on a password field)." },
+	chart: { type: 'string', enum: ['bar', 'line'], description: 'Chart only: chart type.' },
+	data: { type: 'array', items: { type: 'number' }, description: 'Chart only: 6-12 values.' },
+	labels: { type: 'array', items: { type: 'string' }, description: 'Chart only: short x-axis labels, one per value.' },
+	highlight: { type: 'integer', description: 'Chart only: index of the emphasized value (default: the peak).' },
+	prefix: { type: 'string', description: "Chart only: value prefix, e.g. '$'." },
+	suffix: { type: 'string', description: "Chart only: value suffix, e.g. '%'." },
 	...layoutProps,
 	x: { type: 'number', description: "Position relative to the parent. Only used when the parent's layout is 'none'." },
 	y: { type: 'number' },
 }
 
-const NODE_TYPES = ['frame', 'text', 'button', 'input', 'image', 'icon', 'avatar', 'toggle', 'checkbox', 'divider', 'rect']
+const NODE_TYPES = ['frame', 'text', 'button', 'input', 'image', 'icon', 'avatar', 'toggle', 'checkbox', 'divider', 'rect', 'badge', 'chart']
 
 /** JSON schema of one UiNodeSpec (children are UiNodeSpecs too). */
 const uiNodeSpec = {
 	type: 'object',
 	description:
-		'A design node. Types: frame (auto-layout container: rows, cards, nav bars, lists), text, button, input, image (placeholder), icon, avatar, toggle, checkbox, divider, rect. Defaults: text hugs; button 48px tall, hugs its label (stretches full-width in vertical stacks); input 48px tall, full width; frame is a vertical stack (gap 12, no padding, full width, hugs height) - set layout:"horizontal" for rows; image full width x 160; divider full width x 1.',
+		'A design node. Types: frame (auto-layout container), text, button, input, image (generated abstract art), icon (with fill = an icon tile), avatar, toggle, checkbox, divider, rect, badge (pill: status, delta, eyebrow), chart (bar/line with axes). A frame with template + items repeats the template once per item.',
 	properties: {
 		id: { type: 'string', description: "Unique semantic id, e.g. 'login_email'. Prefix with the screen id to keep ids unique across screens." },
 		type: { type: 'string', enum: NODE_TYPES },
@@ -86,6 +93,9 @@ const uiNodeSpec = {
 			description: 'Child nodes (frames only), each with the same shape as this node.',
 			items: { type: 'object' },
 		},
+		template: { type: 'object', description: 'Frames: a node spec repeated once per entry of items; "{key}" in its strings is replaced by the entry\'s value (a field that is just "{key}" is dropped when the entry has no such key).' },
+		items: { type: 'array', items: { type: 'object' }, description: 'Frames with a template: one object of values per repetition.' },
+		dividers: { type: 'boolean', description: 'Frames with items: put a divider between the repeated rows.' },
 	},
 	required: ['id', 'type'],
 }
@@ -108,6 +118,8 @@ export const DRAWING_TOOLS: ToolDef[] = [
 				theme: { type: 'string', enum: ['light', 'dark'] },
 				primary: { type: 'string', description: "Brand color '#rrggbb' for the $primary token." },
 				fill: colorValue('Screen background (default $bg)'),
+				tabs: { type: 'array', items: { type: 'object', properties: { icon: { type: 'string', enum: ICONS }, label: { type: 'string' } } }, description: 'Phone screens: a bottom tab bar (3-5 items). Content stays clear of it.' },
+				activeTab: { type: 'integer', description: 'Index of the active tab.' },
 				...layoutProps,
 				children: { type: 'array', items: uiNodeSpec, description: 'Top-level nodes of the screen, top to bottom.' },
 			},
@@ -137,6 +149,8 @@ export const DRAWING_TOOLS: ToolDef[] = [
 				id: { type: 'string' },
 				type: { type: 'string', enum: NODE_TYPES, description: 'Optional: turn the node into another type.' },
 				...nodeProps,
+				tabs: { type: 'array', items: { type: 'object' }, description: 'Screens: replace the tab bar items ({icon, label}); [] removes it.' },
+				activeTab: { type: 'integer' },
 			},
 			required: ['id'],
 		},

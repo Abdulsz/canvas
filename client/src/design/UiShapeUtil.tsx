@@ -17,7 +17,9 @@ import { bareId } from './tree.ts'
 import {
 	contrast,
 	DEFAULT_THEME,
+	FILLED_ICONS,
 	ICON_PATHS,
+	iconPaths,
 	initials,
 	isContainerKind,
 	letterSpacingFor,
@@ -57,6 +59,9 @@ export function themeFor(editor: ReturnType<typeof useEditor>, id: TLShapeId): T
 }
 
 export function Icon({ name, size, color, strokeWidth = 2 }: { name: string; size: number; color: string; strokeWidth?: number }) {
+	if (FILLED_ICONS.has(name)) {
+		return <svg width={size} height={size} viewBox="0 0 24 24" style={{ flexShrink: 0, display: 'block' }} dangerouslySetInnerHTML={{ __html: iconPaths(name, color) }} />
+	}
 	return (
 		<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, display: 'block' }}>
 			<path d={ICON_PATHS[name] ?? ICON_PATHS.star} />
@@ -118,6 +123,10 @@ function ScreenLabel({ shape }: { shape: UiShape }) {
 				font: `500 12px ${FONT}`,
 				color: dark ? '#a1a1aa' : '#6b6b76',
 				whiteSpace: 'nowrap',
+				// Never wider than the screen, so neighbouring labels don't run together when zoomed out.
+				maxWidth: Math.max(24, shape.props.w * zoom),
+				overflow: 'hidden',
+				textOverflow: 'ellipsis',
 				pointerEvents: 'none',
 			}}
 		>
@@ -174,9 +183,12 @@ function UiView({ shape }: { shape: UiShape }) {
 		case 'rect':
 			break
 		case 'badge': {
+			// Pill text stays readable on its tint in both themes (>= 4.5:1).
+			const ink = legible(textColor, fill)
 			style = {
 				...box,
 				...textStyle,
+				color: ink,
 				letterSpacing: 0,
 				display: 'flex',
 				alignItems: 'center',
@@ -187,7 +199,7 @@ function UiView({ shape }: { shape: UiShape }) {
 			}
 			content = (
 				<>
-					{p.icon && <Icon name={p.icon} size={Math.round(p.fontSize)} color={textColor} strokeWidth={2.25} />}
+					{p.icon && <Icon name={p.icon} size={Math.round(p.fontSize)} color={ink} strokeWidth={2.25} />}
 					{p.text && <span>{p.text}</span>}
 				</>
 			)
