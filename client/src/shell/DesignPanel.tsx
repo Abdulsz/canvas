@@ -74,7 +74,7 @@ function PageOverview({ editor, exec }: { editor: Editor; exec: CanvasExecutor }
 					{list.map((s) => (
 						<button
 							key={s.id}
-							className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-[12px] transition hover:bg-[var(--fill-2)]"
+							className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-[12px] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-2)]"
 							onClick={() => selectAndReveal(editor, s.id)}
 						>
 							<KindIcon kind="screen" className="h-3.5 w-3.5 text-[var(--label-2)]" />
@@ -92,13 +92,13 @@ function PageOverview({ editor, exec }: { editor: Editor; exec: CanvasExecutor }
 					{(['iphone', 'android', 'tablet', 'desktop'] as Device[]).map((d) => (
 						<button
 							key={d}
-							className="flex h-12 flex-col items-start justify-center rounded-[8px] bg-[var(--fill-2)] px-2.5 text-left transition hover:bg-[var(--fill)]"
+							className="flex h-12 flex-col items-start justify-center rounded-[8px] bg-[var(--fill-2)] px-2.5 text-left transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill)]"
 							onClick={() => void insertScreen(editor, exec, d)}
 						>
 							<span className="flex items-center gap-1 text-[12px] font-medium">
 								<PlusIcon className="h-3 w-3" /> {DEVICE_LABELS[d]}
 							</span>
-							<span className="text-[10.5px] tabular-nums text-[var(--label-3)]">
+							<span className="text-[11px] tabular-nums text-[var(--label-3)]">
 								{DEVICES[d].w}×{DEVICES[d].h}
 							</span>
 						</button>
@@ -149,7 +149,7 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 				<div className="min-w-0 flex-1">
 					<TextField label="Layer name" value={layerName(shape, screen ? bareId(screen.id) : null)} onCommit={(name) => update({ name })} placeholder={KIND_LABELS[kind]} />
 				</div>
-				<span className="shrink-0 rounded-full bg-[var(--fill-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--label-2)]">{KIND_LABELS[kind]}</span>
+				<span className="shrink-0 rounded-full bg-[var(--fill-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--label-2)]">{KIND_LABELS[kind]}</span>
 			</div>
 
 			<Section title={isScreenNode ? 'Screen' : 'Size'}>
@@ -237,7 +237,7 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 									title={c}
 									aria-label={`Primary color ${c}`}
 									onClick={() => void exec.run('set_theme', { screenId: shape.id, primary: c })}
-									className={`rounded-full p-[1.5px] transition ${theme.primary.toLowerCase() === c ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
+									className={`rounded-full p-[1.5px] transition-[color,background-color,box-shadow,transform] duration-150 ${theme.primary.toLowerCase() === c ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 								>
 									<span className="block h-[16px] w-[16px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: c }} />
 								</button>
@@ -355,13 +355,13 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 				<p className="-mt-0.5 text-[11px] text-[var(--label-3)]">{isScreenNode ? 'This screen' : `This ${KIND_LABELS[kind].toLowerCase()} and its layers`}</p>
 				<Row>
 					<button
-						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--accent)] text-[12px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98]"
+						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--accent)] text-[12px] font-semibold text-[var(--on-accent)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98]"
 						onClick={() => onOpenCode(shape.id)}
 					>
 						<CodeIcon className="h-3.5 w-3.5" /> Copy code
 					</button>
 					<button
-						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--fill)] text-[12px] font-medium text-[var(--label)] transition hover:bg-[var(--fill-2)] active:scale-[0.98] disabled:opacity-50"
+						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--fill)] text-[12px] font-medium text-[var(--label)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-2)] active:scale-[0.98] disabled:opacity-50"
 						disabled={exporting}
 						onClick={async () => {
 							setExporting(true)

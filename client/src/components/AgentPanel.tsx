@@ -17,9 +17,9 @@ type Props = {
 }
 
 const MODES: { id: ReviewMode; label: string; hint: string }[] = [
-	{ id: 'on_request', label: 'On request', hint: `${AGENT_NAME} critiques when you ask or tap Critique.` },
-	{ id: 'proactive', label: 'Proactive', hint: `${AGENT_NAME} chimes in with ideas whenever you pause editing.` },
-	{ id: 'guided', label: 'Guided', hint: `${AGENT_NAME} leads, asking you one design decision at a time.` },
+	{ id: 'on_request', label: 'On request', hint: 'Critiques only when you ask or tap Critique.' },
+	{ id: 'proactive', label: 'Proactive', hint: 'Chimes in with ideas when you pause editing.' },
+	{ id: 'guided', label: 'Guided', hint: 'Leads, one design decision at a time.' },
 ]
 
 export const SUGGESTED_PROMPTS = ['Design a login screen', 'Build a dashboard', 'Make a landing page', 'Switch to dark mode']
@@ -45,7 +45,7 @@ const initials = (name: string) =>
 export function Avatar({ name, color, ring }: { name: string; color: string; ring?: boolean }) {
 	return (
 		<span
-			className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white ${ring ? 'ring-2 ring-[var(--card)]' : ''}`}
+			className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold text-white ${ring ? 'ring-2 ring-[var(--card)]' : ''}`}
 			style={{ background: `linear-gradient(160deg, color-mix(in srgb, ${color} 75%, white), ${color})` }}
 			aria-hidden
 		>
@@ -82,7 +82,7 @@ function Bubble({ entry, mine, showName }: { entry: LogEntry; mine: boolean; sho
 	return (
 		<div className={`fade-up flex flex-col ${mine ? 'items-end' : 'items-start'} ${showName && mine ? 'mt-3' : ''}`}>
 			{showName && !mine && (
-				<span className="mb-1 ml-1 mt-1.5 flex items-center gap-1.5 text-[11.5px] font-semibold text-[var(--label-2)]">
+				<span className="mb-1 ml-1 mt-1.5 flex items-center gap-1.5 text-[12px] font-semibold text-[var(--label-2)]">
 					{agent ? <Orb state="idle" size={16} /> : null}
 					{entry.from}
 				</span>
@@ -125,26 +125,29 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 	return (
 		<div className="relative flex min-h-0 flex-1 flex-col text-[var(--label)]">
 			{/* Header */}
-			<header className="hairline-b flex items-center gap-3 px-4 py-2.5">
-				<Orb state={orbState} size={30} />
-				<div className="min-w-0 flex-1">
-					<div className="flex items-center gap-1.5 text-[15px] font-semibold leading-tight tracking-[-0.02em]">
-						<span className="truncate whitespace-nowrap">{AGENT_NAME}</span>
+			{/* Phones: one slim row (status, badge, mute); the Agent tab already shows the orb and name. */}
+			<header className="hairline-b flex items-center gap-3 px-4 py-1 md:py-2.5">
+				<span className="hidden md:block">
+					<Orb state={orbState} size={30} />
+				</span>
+				<div className="flex min-w-0 flex-1 items-center gap-2 md:block">
+					<div className="flex items-center gap-1.5 text-[14px] font-semibold leading-tight tracking-[-0.01em] max-md:order-2">
+						<span className="truncate whitespace-nowrap max-md:hidden">{AGENT_NAME}</span>
 						{state.provider === 'mock' && (
 							<span
-								className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--orange)_16%,transparent)] px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.04em] text-[color-mix(in_srgb,var(--orange)_75%,var(--label))]"
+								className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--orange)_16%,transparent)] px-1.5 py-px text-[11px] font-semibold uppercase tracking-[0.04em] text-[color-mix(in_srgb,var(--orange)_75%,var(--label))]"
 								title="A scripted agent is answering. Add an XAI_API_KEY on the server to use Grok."
 							>
 								Demo
 							</span>
 						)}
 					</div>
-					<div className="truncate text-[12px] text-[var(--label-2)]" data-testid="agent-activity" aria-live="polite">
+					<div className="min-w-0 truncate text-[12px] text-[var(--label-2)] max-md:order-1" data-testid="agent-activity" aria-live="polite">
 						{status}
 					</div>
 				</div>
 				<button
-					className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)] active:scale-95"
+					className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill)] active:scale-95"
 					onClick={() => {
 						setMuted(!muted)
 						setMutedState(!muted)
@@ -157,9 +160,9 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 				</button>
 			</header>
 
-			<div className="hairline-b space-y-2.5 px-4 py-3">
+			<div className="hairline-b flex flex-col gap-2.5 px-4 py-3 max-md:flex-row max-md:items-center max-md:gap-2 max-md:py-2.5">
 				{/* Review mode: segmented control */}
-				<div>
+				<div className="min-w-0 max-md:flex-1">
 					<div className="relative grid grid-cols-3 rounded-[9px] bg-[var(--fill)] p-[2px]" role="radiogroup" aria-label="Agent mode">
 						<div
 							className="absolute bottom-[2px] top-[2px] rounded-[7px] bg-[var(--card)] shadow-[var(--shadow-control)] transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
@@ -171,7 +174,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 								key={m.id}
 								role="radio"
 								aria-checked={state.mode === m.id}
-								className={`relative z-10 rounded-[7px] py-[4px] text-[12px] transition-colors ${
+								className={`tap relative z-10 rounded-[7px] py-[4px] text-[12px] transition-colors duration-150 max-md:py-[7px] ${
 									state.mode === m.id ? 'font-semibold text-[var(--label)]' : 'font-medium text-[var(--label-2)] hover:text-[var(--label)]'
 								}`}
 								onClick={() => actions.setMode(m.id)}
@@ -180,12 +183,12 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 							</button>
 						))}
 					</div>
-					<p className="mt-1.5 hidden px-0.5 text-[11.5px] leading-snug text-[var(--label-3)] md:block">{MODES[Math.max(0, modeIndex)].hint}</p>
+					<p className="mt-1.5 hidden px-0.5 text-[12px] leading-snug text-[var(--label-3)] md:block">{MODES[Math.max(0, modeIndex)].hint}</p>
 				</div>
 
-				<div className="flex gap-2">
+				<div className="flex gap-2 max-md:shrink-0">
 					<button
-						className="flex h-9 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[14px] font-semibold text-[var(--on-accent)] shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_rgba(0,0,0,0.14)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
+						className="tap flex h-9 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[14px] font-semibold max-md:px-4 text-[var(--on-accent)] shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_rgba(0,0,0,0.14)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
 						onClick={voice.critique}
 						disabled={!state.connected}
 						title={`Ask ${AGENT_NAME} for a design critique (only the selected nodes, if any)`}
@@ -195,7 +198,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					</button>
 					{state.busy && (
 						<button
-							className="pop flex h-9 w-9 items-center justify-center rounded-full bg-[var(--fill)] text-[var(--label)] transition hover:bg-[var(--fill-2)] active:scale-95"
+							className="tap pop flex h-9 w-9 items-center justify-center rounded-full bg-[var(--fill)] text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
 							onClick={actions.stop}
 							title="Stop"
 							aria-label="Stop"
@@ -208,9 +211,9 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<label className="flex cursor-pointer items-center justify-between gap-3 px-0.5">
 						<span className="min-w-0">
 							<span className="block text-[13px] font-medium text-[var(--label)]">
-								Live voice <span className="ml-1 rounded-full bg-[var(--fill)] px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.04em] text-[var(--label-2)]">Beta</span>
+								Live voice <span className="ml-1 rounded-full bg-[var(--fill)] px-1.5 py-px text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--label-2)]">Beta</span>
 							</span>
-							<span className="block text-[12px] text-[var(--label-3)]">Speech-to-speech: faster replies, just you and {AGENT_NAME}</span>
+							<span className="block text-[12px] text-[var(--label-2)]">Speech-to-speech: faster replies, just you and {AGENT_NAME}</span>
 						</span>
 						<button
 							type="button"
@@ -218,10 +221,10 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 							aria-checked={voice.liveMode}
 							aria-label="Live voice"
 							onClick={() => voice.setLiveMode(!voice.liveMode)}
-							className={`relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors ${voice.liveMode ? 'bg-[var(--green)]' : 'bg-[var(--fill)]'}`}
+							className={`tap relative h-[26px] w-[44px] shrink-0 rounded-full transition-colors duration-150 ${voice.liveMode ? 'bg-[var(--green)]' : 'bg-[var(--fill)]'}`}
 						>
 							<span
-								className={`absolute left-0 top-[2px] h-[22px] w-[22px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-transform ${voice.liveMode ? 'translate-x-[20px]' : 'translate-x-[2px]'}`}
+								className={`absolute left-0 top-[2px] h-[22px] w-[22px] rounded-full bg-white shadow-[0_1px_3px_rgba(0,0,0,0.25)] transition-transform duration-200 ${voice.liveMode ? 'translate-x-[20px]' : 'translate-x-[2px]'}`}
 							/>
 						</button>
 					</label>
@@ -237,13 +240,13 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 							<div className="text-[13px] leading-snug text-[var(--label)]">{s.explanation || s.id}</div>
 							<div className="mt-2.5 flex gap-2">
 								<button
-									className="h-7 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-95"
+									className="tap h-8 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-95"
 									onClick={() => acceptSuggestion(editor, s.id, { kind: 'user', id: me.userId, name: me.name })}
 								>
 									Accept
 								</button>
 								<button
-									className="h-7 rounded-full bg-[var(--fill)] px-3.5 text-[13px] font-medium text-[var(--label)] transition hover:bg-[var(--fill-2)] active:scale-95"
+									className="tap h-8 rounded-full bg-[var(--fill)] px-3.5 text-[13px] font-medium text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
 									onClick={() => dismissSuggestion(editor, s.id)}
 								>
 									Dismiss
@@ -256,7 +259,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 
 			{state.audioBlocked && !muted && (
 				<button
-					className="pop mx-4 mt-3 flex items-center justify-center gap-2 rounded-full bg-[var(--accent)] py-2 text-[13px] font-semibold text-[var(--on-accent)]"
+					className="pop mx-4 mt-3 flex min-h-10 items-center justify-center gap-2 rounded-full bg-[var(--accent)] py-2 text-[13px] font-semibold text-[var(--on-accent)] transition-transform duration-150 active:scale-[0.98]"
 					onClick={unlockAudio}
 				>
 					<SpeakerIcon className="h-4 w-4" /> Tap to hear {AGENT_NAME}
@@ -266,15 +269,15 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 			{/* Conversation */}
 			<div ref={logRef} className="scroll-soft min-h-0 flex-1 space-y-1.5 overflow-y-auto px-3 py-3" data-testid="agent-log">
 				{state.log.length === 0 && (
-					<div className="flex h-full flex-col items-center justify-center px-2 text-center">
-						<Orb state={orbState} size={44} />
-						<p className="mt-3 text-[15px] font-semibold tracking-[-0.02em]">What are we designing?</p>
-						<p className="mt-1 max-w-[240px] text-[12.5px] leading-snug text-[var(--label-2)]">Describe a screen out loud or type it. Ask for edits the same way.</p>
-						<div className="mt-4 flex max-w-full flex-wrap justify-center gap-1.5">
+					<div className="flex min-h-full flex-col items-center justify-center px-2 py-2 text-center">
+						<p className="text-[14px] font-semibold tracking-[-0.01em]">What are we designing?</p>
+						<p className="mt-1 max-w-[240px] text-[13px] leading-snug text-[var(--label-2)]">Describe a screen out loud or type it. Ask for edits the same way.</p>
+						{/* Phones show the same starts on the canvas right above. */}
+						<div className="mt-4 flex max-w-full flex-wrap justify-center gap-1.5 max-md:hidden">
 							{SUGGESTED_PROMPTS.map((p) => (
 								<button
 									key={p}
-									className="shrink-0 rounded-full bg-[var(--fill-2)] px-3 py-1.5 text-[12.5px] text-[var(--accent)] shadow-[0_0_0_0.5px_var(--separator)] transition hover:bg-[var(--accent-soft)] active:scale-95 disabled:opacity-40"
+									className="tap shrink-0 rounded-full bg-[var(--fill-2)] px-3 py-1.5 text-[13px] text-[var(--accent)] shadow-[0_0_0_0.5px_var(--separator)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-soft)] active:scale-95 disabled:opacity-40"
 									onClick={() => voice.sendText(p)}
 									disabled={!state.connected}
 								>
@@ -298,7 +301,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 						<span className="shimmer-text text-[13px]">{status}</span>
 					</div>
 				)}
-				{listenState === 'transcribing' && <div className="fade-up text-right text-[13px] italic text-[var(--label-3)]">Transcribing…</div>}
+				{listenState === 'transcribing' && <div className="fade-up text-right text-[13px] italic text-[var(--label-2)]">Transcribing…</div>}
 				{voice.error && <div className="fade-up text-center text-[12px] text-[var(--red)]">{voice.error}</div>}
 			</div>
 
@@ -308,8 +311,8 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<button
 						type="button"
 						onClick={voice.toggleMic}
-						className={`tap relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition active:scale-95 ${
-							listening ? 'bg-[var(--red)] text-white' : 'bg-[var(--fill)] text-[var(--label)] hover:bg-[var(--fill-2)]'
+						className={`tap relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-[background-color,transform] duration-150 active:scale-95 ${
+							listening ? 'bg-[var(--red)] text-white' : 'bg-[var(--fill)] text-[var(--label)] hover:bg-[var(--fill-strong)]'
 						}`}
 						title={listening ? 'Stop listening' : 'Talk to Grok'}
 						aria-label={listening ? 'Stop listening' : 'Talk to Grok'}
@@ -325,9 +328,9 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 						<MicIcon className="relative h-[18px] w-[18px]" />
 					</button>
 				)}
-				<div className="flex h-9 min-w-0 flex-1 items-center rounded-full bg-[var(--card)] pl-3.5 pr-1 shadow-[0_0_0_0.5px_var(--separator)] transition focus-within:shadow-[0_0_0_1px_var(--accent)]">
+				<div className="flex h-10 min-w-0 flex-1 items-center rounded-full bg-[var(--card)] pl-3.5 pr-1 shadow-[0_0_0_0.5px_var(--separator)] transition-shadow duration-150 focus-within:shadow-[0_0_0_1.5px_var(--focus)] md:h-9">
 					<input
-						className="min-w-0 flex-1 bg-transparent text-[14px] text-[var(--label)] outline-none focus-visible:outline-none placeholder:text-[var(--label-3)]"
+						className="min-w-0 flex-1 bg-transparent text-[16px] md:text-[14px] text-[var(--label)] outline-none focus-visible:outline-none placeholder:text-[var(--label-3)]"
 						placeholder={
 							live.active
 								? 'Live — just talk, or type'
@@ -347,7 +350,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<button
 						type="submit"
 						disabled={!text.trim()}
-						className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] transition enabled:active:scale-90 disabled:scale-75 disabled:opacity-0"
+						className="tap flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] transition-[opacity,transform] duration-150 enabled:active:scale-90 disabled:scale-75 disabled:opacity-0 md:h-7 md:w-7"
 						aria-label="Send"
 					>
 						<SendIcon className="h-4 w-4" />
@@ -368,18 +371,18 @@ export function ConfirmDialog({ state }: { state: AgentState }) {
 					<div className="mx-auto w-fit">
 						<Orb state="idle" size={30} />
 					</div>
-					<p className="mt-3 text-[17px] font-semibold tracking-[-0.02em]">Allow this change?</p>
+					<p className="mt-3 text-[15px] font-semibold tracking-[-0.01em]">Allow this change?</p>
 					<p className="mt-1 text-[13px] leading-snug text-[var(--label-2)]">{state.pendingConfirm.message}</p>
 				</div>
 				<div className="hairline-t grid grid-cols-2">
 					<button
-						className="h-11 text-[17px] text-[var(--accent)] transition hover:bg-[var(--fill-2)] active:bg-[var(--fill)]"
+						className="h-11 text-[14px] text-[var(--accent)] transition-colors duration-150 hover:bg-[var(--fill-2)] active:bg-[var(--press)]"
 						onClick={() => state.pendingConfirm!.resolve(false)}
 					>
 						Don't Allow
 					</button>
 					<button
-						className="h-11 text-[17px] font-semibold text-[var(--accent)] shadow-[inset_0.5px_0_0_var(--separator)] transition hover:bg-[var(--fill-2)] active:bg-[var(--fill)]"
+						className="h-11 text-[14px] font-semibold text-[var(--accent)] shadow-[inset_0.5px_0_0_var(--separator)] transition-colors duration-150 hover:bg-[var(--fill-2)] active:bg-[var(--press)]"
 						onClick={() => state.pendingConfirm!.resolve(true)}
 					>
 						Allow

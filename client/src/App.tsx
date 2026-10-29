@@ -29,12 +29,12 @@ export function App() {
 						<Orb state="idle" size={64} />
 					</div>
 					<h1 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.03em] text-[var(--label)]">Design out loud.</h1>
-					<p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-[var(--label-2)]">
+					<p className="mx-auto mt-2 max-w-[280px] text-[14px] leading-snug text-[var(--label-2)]">
 						Describe screens and {AGENT_NAME} builds them with you, live, on a shared canvas.
 					</p>
 					<input
 						autoFocus
-						className="mt-7 h-12 w-full rounded-[14px] bg-[var(--card)] px-4 text-[17px] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)] outline-none focus-visible:outline-none transition placeholder:text-[var(--label-3)] focus:shadow-[0_0_0_1.5px_var(--accent)]"
+						className="mt-7 h-12 w-full rounded-[14px] bg-[var(--card)] px-4 text-[16px] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)] outline-none focus-visible:outline-none transition-shadow duration-150 placeholder:text-[var(--label-3)] focus:shadow-[0_0_0_2px_var(--focus)]"
 						placeholder="Your name"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
@@ -42,7 +42,7 @@ export function App() {
 						autoComplete="given-name"
 					/>
 					<button
-						className="mt-3 h-12 w-full rounded-[14px] bg-[var(--accent)] text-[17px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
+						className="mt-3 h-12 w-full rounded-[14px] bg-[var(--accent)] text-[15px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
 						type="submit"
 						disabled={!name.trim()}
 					>

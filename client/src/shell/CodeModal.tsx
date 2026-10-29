@@ -80,7 +80,7 @@ export function CodeModal({ editor, id, onClose }: { editor: Editor; id: TLShape
 					</div>
 					{copied === 'auto' && <span className="fade-up hidden items-center gap-1 text-[12px] text-[var(--green)] sm:flex"><CheckIcon className="h-3.5 w-3.5" /> Copied to clipboard</span>}
 					<button
-						className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--fill)] px-3 text-[12px] font-medium transition hover:bg-[var(--fill-2)]"
+						className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--fill)] px-3 text-[12px] font-medium transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-strong)]"
 						onClick={() => {
 							const blob = new Blob([code.html], { type: 'text/html' })
 							const a = document.createElement('a')
@@ -93,7 +93,7 @@ export function CodeModal({ editor, id, onClose }: { editor: Editor; id: TLShape
 						<DownloadIcon className="h-3.5 w-3.5" /> .html
 					</button>
 					<button
-						className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[12px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-95"
+						className="flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[12px] font-semibold text-[var(--on-accent)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-95"
 						onClick={async () => {
 							if (await copyText(code.html)) {
 								setCopied('manual')
@@ -104,7 +104,7 @@ export function CodeModal({ editor, id, onClose }: { editor: Editor; id: TLShape
 						{copied === 'manual' ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
 						{copied === 'manual' ? 'Copied' : 'Copy'}
 					</button>
-					<button className="flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)]" onClick={onClose} aria-label="Close">
+					<button className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)]" onClick={onClose} aria-label="Close">
 						<CloseIcon className="h-4 w-4" />
 					</button>
 				</header>

@@ -142,13 +142,26 @@ const themes: Partial<TLThemes> = {
 		...DEFAULT_THEME,
 		colors: {
 			light: { ...DEFAULT_THEME.colors.light, background: '#ebebed', selectionStroke: SELECTION, selectionFill: 'rgba(13, 153, 255, 0.14)' },
-			dark: { ...DEFAULT_THEME.colors.dark, background: '#161618', selectionStroke: SELECTION, selectionFill: 'rgba(13, 153, 255, 0.2)' },
+			dark: { ...DEFAULT_THEME.colors.dark, background: '#111113', selectionStroke: SELECTION, selectionFill: 'rgba(13, 153, 255, 0.2)' },
 		},
 	},
 }
 
 type Tab = 'design' | 'agent'
 const TAB_KEY = 'grok-design:tab'
+const PHONE = '(max-width: 767px)'
+
+function useMedia(query: string) {
+	const [match, setMatch] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
+	useEffect(() => {
+		const m = window.matchMedia(query)
+		const on = () => setMatch(m.matches)
+		on()
+		m.addEventListener('change', on)
+		return () => m.removeEventListener('change', on)
+	}, [query])
+	return match
+}
 
 export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 	const users = useMemo(() => {
@@ -170,15 +183,22 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 	// The shell's edits (Design panel, Layers, Insert) run through the agent's
 	// executor as the local user, so layout logic lives in one place.
 	const userExec = useMemo(() => (editor ? new CanvasExecutor(editor, { asUser: true }) : null), [editor])
+	// First run opens on the Agent tab: with nothing selected the Design tab has
+	// nothing to edit, and the conversation (and its text field) is the way in.
+	// Once someone picks a tab, that choice sticks.
 	const [tab, setTabState] = useState<Tab>(() => {
 		try {
-			return localStorage.getItem(TAB_KEY) === 'agent' ? 'agent' : 'design'
+			return localStorage.getItem(TAB_KEY) === 'design' ? 'design' : 'agent'
 		} catch {
-			return 'design'
+			return 'agent'
 		}
 	})
+	const phone = useMedia(PHONE)
+	// Phones: the right panel is a bottom sheet: peeking (tabs only), half open, or full.
+	const [sheet, setSheet] = useState<'peek' | 'half' | 'full'>('half')
 	const setTab = (t: Tab) => {
 		setTabState(t)
+		setSheet((s) => (s === 'peek' ? 'half' : s))
 		try {
 			localStorage.setItem(TAB_KEY, t)
 		} catch {}
@@ -190,8 +210,12 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 	// On phones the layers drawer closes once something is picked.
 	const selectionKey = useValue('selection key', () => editor?.getSelectedShapeIds().join(',') ?? '', [editor])
 	useEffect(() => {
-		if (selectionKey && window.matchMedia('(max-width: 767px)').matches) setLayersOpen(false)
+		if (selectionKey && window.matchMedia(PHONE).matches) setLayersOpen(false)
 	}, [selectionKey])
+
+	// Drag the sheet handle up or down a step (peek, half, full); a tap toggles peek and half.
+	const drag = useRef<number | null>(null)
+	const peek = phone && sheet === 'peek'
 
 	return (
 		<div className="flex h-full flex-col bg-[var(--bg)]">
@@ -205,15 +229,18 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 				onToggleLayers={() => setLayersOpen((o) => !o)}
 				layersOpen={layersOpen}
 			/>
-			<div className="relative flex min-h-0 flex-1 flex-col gap-2 px-2 pb-2 md:flex-row">
-				{/* Layers: docked on desktop, a drawer over the canvas on phones */}
+			<div className="relative flex min-h-0 flex-1 flex-col gap-2 md:flex-row md:px-2 md:pb-2">
+				{/* Layers: docked on desktop, a drawer with a scrim on phones */}
+				{layersOpen && (
+					<div className="fade-in absolute inset-0 z-[690] bg-black/30 md:hidden" onClick={() => setLayersOpen(false)} aria-hidden data-testid="layers-scrim" />
+				)}
 				<div
-					className={`${layersOpen ? 'flex' : 'hidden'} absolute bottom-2 left-2 top-0 z-[700] w-[min(280px,calc(100%-16px))] md:static md:z-auto md:flex md:w-[232px] md:shrink-0 lg:w-[248px]`}
+					className={`${layersOpen ? 'flex' : 'hidden'} slide-in absolute bottom-0 left-0 top-0 z-[700] w-[min(300px,86vw)] pb-[max(8px,env(safe-area-inset-bottom))] pl-2 md:static md:z-auto md:flex md:w-[232px] md:shrink-0 md:p-0 md:[animation:none] lg:w-[248px]`}
 				>
 					<LayersPanel editor={editor} exec={userExec} onClose={layersOpen ? () => setLayersOpen(false) : undefined} />
 				</div>
 
-				<div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[16px] shadow-[var(--shadow-panel)]" data-testid="canvas">
+				<div className="relative mx-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-[16px] shadow-[var(--shadow-panel)] md:mx-0" data-testid="canvas">
 					<AgentCursorContext.Provider value={agent.state.agentCursor}>
 						<Tldraw
 							store={store}
@@ -238,15 +265,42 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 					<VoiceDock state={agent.state} voice={voice} onOpenAgent={() => setTab('agent')} onStop={agent.actions.stop} />
 				</div>
 
-				{/* Right: Design | Agent */}
-				<aside className="flex h-[46%] w-full shrink-0 flex-col overflow-hidden rounded-[16px] bg-[var(--material-thick)] text-[var(--label)] shadow-[var(--shadow-panel)] md:h-full md:w-[300px] lg:w-[320px]">
-					<div className="hairline-b flex h-10 shrink-0 items-center gap-1 px-2" role="tablist" aria-label="Panels">
+				{/* Right: Design | Agent. On phones, a bottom sheet with a grab handle. */}
+				<aside
+					className={`flex w-full shrink-0 flex-col overflow-hidden rounded-t-[20px] bg-[var(--material-thick)] text-[var(--label)] shadow-[var(--shadow-panel)] backdrop-blur-[24px] transition-[height] duration-250 ease-[cubic-bezier(0.2,0.8,0.2,1)] md:h-full md:w-[300px] md:rounded-[16px] lg:w-[320px] ${
+						peek ? 'h-[calc(64px+env(safe-area-inset-bottom))]' : sheet === 'full' && phone ? 'h-[78dvh]' : 'h-[40dvh] min-h-[300px]'
+					}`}
+					data-sheet={phone ? sheet : undefined}
+					data-testid="side-panel"
+				>
+					<button
+						type="button"
+						className="sheet-handle tap flex h-5 w-full shrink-0 touch-none items-end justify-center md:hidden"
+						aria-label={peek ? 'Expand panel' : 'Collapse panel'}
+						aria-expanded={!peek}
+						title="Drag to resize"
+						onPointerDown={(e) => (drag.current = e.clientY)}
+						onPointerUp={(e) => {
+							const dy = drag.current === null ? 0 : e.clientY - drag.current
+							drag.current = null
+							if (dy > 24) setSheet((s) => (s === 'full' ? 'half' : 'peek'))
+							else if (dy < -24) setSheet((s) => (s === 'peek' ? 'half' : 'full'))
+							else setSheet(peek ? 'half' : 'peek')
+						}}
+						onKeyDown={(e) => {
+							if (e.key === 'Enter' || e.key === ' ') {
+								e.preventDefault()
+								setSheet(peek ? 'half' : 'peek')
+							}
+						}}
+					/>
+					<div className="hairline-b flex h-11 shrink-0 items-center gap-1 px-2 md:h-10" role="tablist" aria-label="Panels">
 						{(['design', 'agent'] as const).map((t) => (
 							<button
 								key={t}
 								role="tab"
 								aria-selected={tab === t}
-								className={`tap relative flex h-7 items-center gap-1.5 rounded-[7px] px-2.5 text-[12px] transition ${
+								className={`tap relative flex h-8 items-center gap-1.5 rounded-[8px] px-3 text-[13px] transition-colors duration-150 md:h-7 md:rounded-[7px] md:px-2.5 md:text-[12px] ${
 									tab === t ? 'bg-[var(--fill)] font-semibold text-[var(--label)]' : 'font-medium text-[var(--label-2)] hover:text-[var(--label)]'
 								}`}
 								onClick={() => setTab(t)}
@@ -258,7 +312,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 						))}
 						{tab === 'design' && (
 							<button
-								className="ml-auto flex h-7 min-w-0 max-w-[55%] items-center gap-1.5 truncate rounded-[7px] px-2 text-[11.5px] text-[var(--label-2)] transition hover:bg-[var(--fill-2)]"
+								className="tap ml-auto flex h-7 min-w-0 max-w-[55%] items-center gap-1.5 truncate rounded-[7px] px-2 text-[12px] text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill-2)]"
 								onClick={() => setTab('agent')}
 								title={voice.status}
 								data-testid="agent-status-strip"
@@ -268,10 +322,10 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 							</button>
 						)}
 					</div>
-					<div className={`${tab === 'design' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} role="tabpanel" aria-label="Design">
+					<div className={`${tab === 'design' && !peek ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} role="tabpanel" aria-label="Design">
 						<DesignPanel editor={editor} exec={userExec} onOpenCode={setCodeFor} />
 					</div>
-					<div className={`${tab === 'agent' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} role="tabpanel" aria-label="Agent">
+					<div className={`${tab === 'agent' && !peek ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col pb-[env(safe-area-inset-bottom)] md:pb-0`} role="tabpanel" aria-label="Agent">
 						<AgentPanel me={me} editor={editor} state={agent.state} actions={agent.actions} voice={voice} />
 					</div>
 				</aside>

@@ -37,26 +37,29 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 	const others = participants.filter((p) => p.userId !== me.userId)
 
 	return (
-		<header className="relative z-[500] flex h-12 shrink-0 items-center gap-2 px-2.5 md:px-3" data-testid="top-bar">
+		<header
+			className="relative z-[500] flex h-[calc(52px+env(safe-area-inset-top))] shrink-0 items-center gap-1.5 bg-[var(--bg)] pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))] pt-[env(safe-area-inset-top)] md:h-12 md:gap-2 md:px-3"
+			data-testid="top-bar"
+		>
 			{/* Left: layers toggle (mobile), product mark, file name */}
 			<button
-				className={`tap flex h-8 w-8 items-center justify-center rounded-[8px] transition md:hidden ${layersOpen ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'text-[var(--label-2)] hover:bg-[var(--fill)]'}`}
+				className={`tap flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] transition-colors duration-150 md:hidden ${layersOpen ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'text-[var(--label-2)] hover:bg-[var(--fill)]'}`}
 				onClick={onToggleLayers}
 				aria-label="Layers"
 				aria-pressed={layersOpen}
 			>
-				<LayersIcon className="h-4 w-4" />
+				<LayersIcon className="h-[18px] w-[18px]" />
 			</button>
 			<div className="flex min-w-0 items-center gap-2.5">
-				<div className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[var(--accent)] text-[var(--on-accent)] sm:flex" aria-hidden>
+				<div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] bg-[var(--accent)] text-[var(--on-accent)] max-[479px]:hidden" aria-hidden>
 					<svg viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
 						<path d="M5.5 2.5v11 M10.5 2.5v11 M2.5 5.5h11 M2.5 10.5h11" />
 					</svg>
 				</div>
-				<div className="flex min-w-0 items-center gap-1.5 text-[13px]">
+				<div className="flex min-w-0 items-center gap-1.5 text-[13px] max-[479px]:sr-only">
 					<span className="hidden text-[var(--label-3)] lg:inline">Grok Design</span>
 					<span className="hidden text-[var(--label-3)] lg:inline">/</span>
-					<FileIcon className="h-3.5 w-3.5 shrink-0 text-[var(--label-2)] lg:hidden" />
+					<FileIcon className="h-3.5 w-3.5 shrink-0 text-[var(--label-2)] lg:hidden" aria-hidden />
 					<span className="truncate font-semibold tracking-[-0.01em]" title={`Room ${roomId}`} data-testid="file-name">
 						{roomId}
 					</span>
@@ -67,7 +70,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 			<div className="flex flex-1 justify-center">
 				<div ref={insert.ref} className="relative">
 					<button
-						className={`tap flex h-8 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition active:scale-[0.97] ${
+						className={`tap flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.97] md:h-8 ${
 							insert.open ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--card)] text-[var(--label)] shadow-[var(--shadow-control)] hover:bg-[var(--fill-2)]'
 						}`}
 						onClick={() => insert.setOpen(!insert.open)}
@@ -79,7 +82,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					</button>
 					{insert.open && editor && exec && (
 						<div className={`${menuPanel} left-1/2 w-[372px] max-w-[calc(100vw-24px)] -translate-x-1/2`} role="menu" aria-label="Insert">
-							<div className="px-2 pb-1 pt-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Screens</div>
+							<div className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Screens</div>
 							<div className="grid grid-cols-2 gap-0.5">
 								{(Object.keys(DEVICES) as Device[]).map((d) => (
 									<MenuItem
@@ -96,15 +99,15 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 							</div>
 							<div className="mx-2 my-1.5 h-px bg-[var(--separator)]" />
 							<div className="flex items-baseline justify-between px-2 pb-1 pt-0.5">
-								<span className="text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Components</span>
-								<span className="text-[10.5px] text-[var(--label-3)]">into the selected screen or frame</span>
+								<span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Components</span>
+								<span className="text-[11px] text-[var(--label-3)]">into the selected screen or frame</span>
 							</div>
 							<div className="grid grid-cols-3 gap-1">
 								{COMPONENTS.map((c) => (
 									<button
 										key={c.key}
 										role="menuitem"
-										className="flex h-[58px] flex-col items-center justify-center gap-1.5 rounded-[9px] text-[12px] text-[var(--label)] transition hover:bg-[var(--fill)]"
+										className="flex h-[58px] flex-col items-center justify-center gap-1.5 rounded-[9px] text-[12px] text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill)] active:bg-[var(--press)]"
 										onClick={() => {
 											insert.setOpen(false)
 											void insertComponent(editor, exec, c.key)
@@ -123,15 +126,15 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 			</div>
 
 			{/* Right: people, theme, export, invite */}
-			<div className="flex items-center gap-1.5">
-				<div className="mr-1 hidden -space-x-1.5 sm:flex" data-testid="top-participants" title={[me.name, ...others.map((o) => o.name)].join(', ')}>
+			<div className="flex items-center gap-1 md:gap-1.5">
+				<div className="mr-1 hidden -space-x-1.5 md:flex" data-testid="top-participants" title={[me.name, ...others.map((o) => o.name)].join(', ')}>
 					<Avatar name={me.name} color={me.color} ring />
 					{others.slice(0, 3).map((p) => (
 						<Avatar key={p.userId} name={p.name} color={p.color} ring />
 					))}
 				</div>
 				<button
-					className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition hover:bg-[var(--fill)] hover:text-[var(--label)] disabled:opacity-35 disabled:hover:bg-transparent"
+					className="tap flex h-10 w-10 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] disabled:opacity-40 disabled:hover:bg-transparent md:h-8 md:w-8"
 					disabled={!target}
 					onClick={() => target && void exec?.run('set_theme', { screenId: target.id, mode: target.mode === 'dark' ? 'light' : 'dark' })}
 					title={target ? `Switch “${target.name}” to ${target.mode === 'dark' ? 'light' : 'dark'} mode` : 'Theme (select a screen)'}
@@ -141,7 +144,8 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 				</button>
 				<div ref={exportMenu.ref} className="relative">
 					<button
-						className="tap flex h-8 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-[var(--label)] transition hover:bg-[var(--fill)] disabled:opacity-35"
+						className="tap flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill)] disabled:opacity-40 md:h-8"
+						aria-label="Export"
 						onClick={() => exportMenu.setOpen(!exportMenu.open)}
 						disabled={!target}
 						aria-haspopup="menu"
@@ -175,7 +179,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					)}
 				</div>
 				<button
-					className="tap flex h-8 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition hover:bg-[var(--accent-hover)] active:scale-[0.97]"
+					className="tap flex h-9 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.97] md:h-8"
 					onClick={() => {
 						void navigator.clipboard?.writeText(location.href).catch(() => {})
 						setCopied(true)
