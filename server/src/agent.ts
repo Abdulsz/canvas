@@ -34,15 +34,15 @@ export type AgentOptions = {
 
 const MAX_HISTORY = 60
 
-// Spoken the moment a student finishes talking, while Grok thinks, so the
+// Spoken the moment the user finishes talking, while Grok thinks, so the
 // conversation never goes silent. Their audio is synthesized once and cached.
-export const ACKS = ['Sure.', 'Good question.', 'Okay, let me sketch that.', 'Mm, let me think.', "Great, let's see."]
-export const REVIEW_ACK = 'Let me take a look.'
+export const ACKS = ['Sure.', 'Got it.', 'Okay, let me sketch that.', 'Mm, let me think.', "Great, let's design it."]
+export const REVIEW_ACK = 'Let me critique that.'
 
 /**
  * The agent for one room. It joins the room as a participant: it listens to
- * student edits, runs the Grok tool loop, and has a connected browser (the
- * "driver") apply its drawing tool calls to the shared tldraw document, which
+ * collaborator edits, runs the Grok tool loop, and has a connected browser (the
+ * "driver") apply its design tool calls to the shared tldraw document, which
  * then syncs to every participant.
  */
 export class AgentSession {
@@ -98,7 +98,7 @@ export class AgentSession {
 		for (const [id, p] of this.pendingCalls) {
 			if (p.ws === ws) {
 				this.pendingCalls.delete(id)
-				p.resolve({ ok: false, error: 'The student whose browser was running this tool disconnected.' })
+				p.resolve({ ok: false, error: 'The collaborator whose browser was running this tool disconnected.' })
 			}
 		}
 		this.broadcastState()
@@ -106,7 +106,7 @@ export class AgentSession {
 
 	private handle(ws: WebSocket, msg: ClientMessage) {
 		if (msg.type === 'hello') {
-			this.clients.set(ws, { ws, userId: msg.userId, name: msg.name.slice(0, 40) || 'Student', color: msg.color })
+			this.clients.set(ws, { ws, userId: msg.userId, name: msg.name.slice(0, 40) || 'Collaborator', color: msg.color })
 			this.broadcastState()
 			return
 		}
@@ -123,11 +123,11 @@ export class AgentSession {
 				return
 			}
 			case 'check_work':
-				this.broadcast({ type: 'chat', from: client.name, text: '✅ Check my work' })
+				this.broadcast({ type: 'chat', from: client.name, text: '✅ Critique' })
 				this.trigger({ kind: 'check_work', from: client, shapeIds: msg.shapeIds ?? [] })
 				return
 			case 'set_mode':
-				if (['on_request', 'proactive', 'exercise'].includes(msg.mode)) this.mode = msg.mode
+				if (['on_request', 'proactive', 'guided'].includes(msg.mode)) this.mode = msg.mode
 				this.broadcastState()
 				return
 			case 'tool_result': {
@@ -181,7 +181,7 @@ export class AgentSession {
 		if (!userEntries.length) return
 		this.lastEditorId = userEntries[userEntries.length - 1].author!.id
 		if (this.mode !== 'proactive') return
-		// Debounce: wait until students pause before looking.
+		// Debounce: wait until collaborators pause before looking.
 		if (this.idleTimer) clearTimeout(this.idleTimer)
 		this.idleTimer = setTimeout(() => {
 			this.idleTimer = null
@@ -214,7 +214,7 @@ export class AgentSession {
 		this.abort?.abort()
 		for (const [id, p] of this.pendingCalls) {
 			this.pendingCalls.delete(id)
-			p.resolve({ ok: false, error: 'Interrupted by a student.' })
+			p.resolve({ ok: false, error: 'Interrupted by a collaborator.' })
 		}
 		for (const done of this.pendingSpeech.values()) done()
 		this.broadcast({ type: 'stop_speech' })
@@ -228,7 +228,7 @@ export class AgentSession {
 		let driver = this.pickDriver(trigger.from)
 		let speech: Promise<void> = Promise.resolve()
 		try {
-			if (!driver) throw new Error('No connected browser to draw with.')
+			if (!driver) throw new Error('No connected browser to design with.')
 			// Acknowledge right away; Grok's first sentence follows it.
 			let ack: string | null = null
 			if (trigger.kind !== 'idle') {
@@ -260,8 +260,8 @@ export class AgentSession {
 			const triggerMessage = await this.buildTriggerMessage(trigger, driver, abort.signal)
 			const said = [ack, opener.trim()].filter(Boolean).join(' ')
 			const note = opener.trim()
-				? `(You already said this out loud: "${said}". Continue from there: draw it step by step and speak only NEW sentences; never repeat what you already said.)`
-				: `(The student just heard you say "${ack}". Now speak your first explanatory sentence while you draw; don't repeat "${ack}".)`
+				? `(You already said this out loud: "${said}". Continue from there: design it step by step and speak only NEW sentences; never repeat what you already said.)`
+				: `(The user just heard you say "${ack}". Now speak your first short sentence while you design; don't repeat "${ack}".)`
 			if (ack && typeof triggerMessage.content === 'string') triggerMessage.content += `\n${note}`
 			else if (ack && Array.isArray(triggerMessage.content)) triggerMessage.content.push({ type: 'text', text: note })
 			this.pushHistory(triggerMessage)
@@ -297,7 +297,7 @@ export class AgentSession {
 							tools = tools.then(async () => {
 								if (abort.signal.aborted) return
 								driver = this.pickDriver(driver)
-								if (!driver) throw new Error('No connected browser to draw with.')
+								if (!driver) throw new Error('No connected browser to design with.')
 								this.status(`Running ${call.function.name}…`)
 								results.push({ call, result: await this.executeTool(call, driver) })
 							}).catch((err) => {
@@ -364,11 +364,11 @@ export class AgentSession {
 	 */
 	private async buildTriggerMessage(t: Trigger, driver: Client, signal: AbortSignal): Promise<ChatMessage> {
 		const others = [...this.clients.values()].map((c) => c.name).join(', ')
-		const header = `Mode: ${this.mode}. Students in the room: ${others || 'none'}.`
+		const header = `Mode: ${this.mode}. Collaborators in the room: ${others || 'none'}.`
 		if (t.kind === 'message') {
 			const changes = this.takeRecentChanges()
 			const sel = t.selection.length ? `\n${t.from.name} has selected: ${t.selection.map(stripId).join(', ')}.` : ''
-			const ch = changes.total ? `\nStudent edits since you last looked: ${JSON.stringify(changes.byUser)}` : ''
+			const ch = changes.total ? `\nCollaborator edits since you last looked: ${JSON.stringify(changes.byUser)}` : ''
 			return { role: 'user', content: `[trigger:message] ${header}${sel}${ch}\n${t.from.name} says: ${t.text}` }
 		}
 
@@ -378,13 +378,13 @@ export class AgentSession {
 		const parts: ContentPart[] = []
 		const intro =
 			t.kind === 'check_work'
-				? `[trigger:check_work] ${header}\n${t.from.name} pressed "Check my work"${
-						t.shapeIds.length ? ' with a selection (review only those shapes)' : ''
-					}. Review their drawing and give feedback by voice AND on the board: point at the specific shapes you are talking about with highlight_shapes and/or add_comment (and suggest_correction for a concrete fix).`
-				: `[trigger:idle] ${header}\nStudents paused after editing the board. Decide whether to comment (proactive mode).`
+				? `[trigger:check_work] ${header}\n${t.from.name} pressed "Critique"${
+						t.shapeIds.length ? ' with a selection (critique only those nodes)' : ''
+					}. Critique their design and give feedback by voice AND on the canvas: point at the specific nodes you are talking about with highlight_shapes and add_comment (kinds issue, suggestion, praise), and offer concrete fixes you can apply with update_node.`
+				: `[trigger:idle] ${header}\nThe collaborators paused after editing the canvas. Decide whether to comment (proactive mode).`
 		parts.push({
 			type: 'text',
-			text: `${intro}\nCanvas state: ${formatToolResult(state)}\nRecent student edits: ${JSON.stringify(changes.byUser)}`,
+			text: `${intro}\nCanvas state: ${formatToolResult(state)}\nRecent collaborator edits: ${JSON.stringify(changes.byUser)}`,
 		})
 		const shapes: any[] = (state.data as any)?.shapes ?? []
 		if (shapes.some((s) => s.author?.kind === 'user' && s.type === 'draw')) {
@@ -489,16 +489,23 @@ export class AgentSession {
 	}
 
 	/**
-	 * Server-side enforcement of "respect student work": any call that would
-	 * change or remove a student-authored shape needs a student's explicit OK.
+	 * Server-side enforcement of "respect user work": any call that would
+	 * change or remove a user-authored node needs a collaborator's explicit OK.
 	 */
 	guard(name: string, args: Record<string, any>): { message: string } | undefined {
 		const userOwned = (ids: string[]) =>
 			ids.filter((id) => this.room.getAuthor(id)?.kind === 'user').map((id) => ({ id, author: this.room.getAuthor(id)! }))
 		let touched: { id: string; author: Author }[] = []
 		let verb = 'change'
-		if (name === 'update_shape' || name === 'create_shape') {
+		if (['update_node', 'move_node', 'create_screen', 'duplicate_screen'].includes(name)) {
 			touched = userOwned([String(args.id ?? '')])
+		} else if (name === 'add_nodes') {
+			touched = userOwned([String(args.parentId ?? '')])
+		} else if (name === 'set_theme') {
+			if (args.screenId && args.screenId !== 'all') touched = userOwned([String(args.screenId)])
+		} else if (name === 'delete_nodes') {
+			verb = 'delete'
+			touched = userOwned((args.ids ?? []).map((id: string) => stripId(String(id))))
 		} else if (name === 'clear_canvas') {
 			verb = 'erase'
 			if (args.mode === 'agent_only') return undefined
@@ -511,7 +518,7 @@ export class AgentSession {
 		if (!touched.length) return undefined
 		const owners = [...new Set(touched.map((t) => t.author.name))].join(', ')
 		return {
-			message: `Professor Grok wants to ${verb} ${touched.length} shape(s) drawn by ${owners}. Allow?`,
+			message: `Grok Design wants to ${verb} ${touched.length} element(s) designed by ${owners}. Allow?`,
 		}
 	}
 
@@ -540,7 +547,7 @@ export class AgentSession {
 	}
 }
 
-/** A short spoken line describing what a silent drawing step added ("Here's the cache and the database."). */
+/** A short spoken line describing what a silent design step added ("Here's the Login screen."). */
 export function narrateDrawing(calls: ToolCall[]): string | null {
 	const labels: string[] = []
 	for (const c of calls) {
@@ -550,12 +557,12 @@ export function narrateDrawing(calls: ToolCall[]): string | null {
 		} catch {
 			continue
 		}
-		// Name boxes only; notes and text are sentences, not names, and Grok usually says them anyway.
-		const label = typeof args.label === 'string' ? args.label.trim() : ''
-		if (c.function.name === 'create_shape' && args.type !== 'note' && args.type !== 'text' && label && label.length <= 30 && !/[:\n.]/.test(label)) labels.push(label)
-		else if (c.function.name === 'draw_array' && Array.isArray(args.values)) labels.push('the array')
+		const name = typeof args.name === 'string' ? args.name.trim() : ''
+		if (c.function.name === 'create_screen' && name && name.length <= 30) labels.push(`the ${name} screen`)
+		else if (c.function.name === 'create_screen') labels.push('a new screen')
+		else if (c.function.name === 'duplicate_screen') labels.push('a copy of the screen')
 	}
-	const unique = [...new Set(labels)].slice(0, 4)
+	const unique = [...new Set(labels)].slice(0, 3)
 	if (!unique.length) return null
 	const list = unique.length === 1 ? unique[0] : `${unique.slice(0, -1).join(', ')} and ${unique.at(-1)}`
 	return `Here's ${list}.`

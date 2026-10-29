@@ -1,7 +1,7 @@
 // Messages exchanged on the /agent/:roomId WebSocket. Canvas data itself
 // travels over the separate tldraw sync socket (/sync/:roomId).
 
-export type ReviewMode = 'on_request' | 'proactive' | 'exercise'
+export type ReviewMode = 'on_request' | 'proactive' | 'guided'
 
 export type Author = { kind: 'user' | 'agent'; id: string; name: string }
 
@@ -42,7 +42,7 @@ export type ServerMessage =
 			callId: string
 			name: string
 			args: Record<string, any>
-			/** Present when the call touches student-authored shapes: the client must ask before running it. */
+			/** Present when the call touches user-authored nodes: the client must ask before running it. */
 			confirm?: { message: string }
 	  }
 	/** `report`: this client should send speech_done when it finishes speaking the line. */
@@ -55,5 +55,5 @@ export type ServerMessage =
 	| { type: 'stop_speech' }
 	| { type: 'error'; message: string }
 
-export const AGENT_NAME = 'Professor Grok'
+export const AGENT_NAME = 'Grok Design'
 export const AGENT_COLOR = '#7c3aed'
