@@ -117,7 +117,7 @@ step(`agent's ${spoken.length} lines went to browser speech synthesis; mic staye
 
 // 3. Barge-in + follow-up by voice in the same conversation.
 await page.evaluate(() => window.__speak('make the button green', 200))
-await page.waitForFunction(() => window.__editor.getShape('shape:login_primary_btn')?.props.fill === '#16a34a', null, { timeout: 60000 })
+await page.waitForFunction(() => window.__editor.getShape('shape:login_primary_btn')?.props.fill === '#15803d', null, { timeout: 60000 })
 await page.getByTestId('agent-status-strip').getByText('Ready').waitFor({ timeout: 60000 })
 // Talk over the agent while it speaks: its voice stops right away.
 await page.evaluate(() => window.__speak('switch to dark mode', 600))

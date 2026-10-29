@@ -327,7 +327,7 @@ export class AgentSession {
 			this.status('Looking at the board…')
 			const triggerMessage = await this.buildTriggerMessage(trigger, driver, abort.signal)
 			const note = model
-				? `(A spoken status line about this request is already playing. Make the tool calls first, with no status sentence of your own. Then end with ONE short question about something specific you just changed or could change next.)`
+				? `(A spoken status line about this request is already playing. Make the tool calls first, with no status sentence of your own. Then end with ONE short question about the next meaningful product step: another screen in the flow, a missing state (empty, error, loading), a light/dark pair or a missing key component; never a small style or copy tweak, never something already true.)`
 				: this.provider.opener && trigger.kind === 'message' && !isCritiqueRequest(trigger.text)
 				? `(A spoken status line about this request is already playing ("${ack} ..."). Your text is only ONE short question about a specific element you are building; no status sentence, no description. Do all the building with tool calls (create_screen, add_nodes, focus_view), never as JSON in your text.)`
 				: `(The user just heard you say "${ack}". Now speak your first short sentence while you work; don't repeat "${ack}".)`
@@ -451,7 +451,8 @@ export class AgentSession {
 				let clean = true
 				for (const call of toolCalls) {
 					const result = results.find((r) => r.call.id === call.id)?.result ?? { ok: false, error: 'Not run.' }
-					this.pushHistory({ role: 'tool', tool_call_id: call.id, content: formatToolResult(result) })
+					// The scripted mock parses the canvas state, so it gets it whole; Grok gets it capped.
+					this.pushHistory({ role: 'tool', tool_call_id: call.id, content: formatToolResult(result, this.provider.name === 'mock' ? Infinity : undefined) })
 					if (!result.ok && call.function.name !== 'add_comment') extraStatus = 1
 					if (result.image) images.push({ type: 'image_url', image_url: { url: result.image, detail: 'high' } })
 					if (!result.ok || (result.data as any)?.warnings?.length || READING_TOOLS.has(call.function.name)) clean = false
@@ -909,8 +910,20 @@ export function questionProblem(question: string, facts: CanvasFacts): string | 
 	if (/["“”]/.test(question) || /\b(read|reads|say|says|wording|reword|rename|retitle|relabel)\b/.test(q)) return 'copy tweak'
 	if (/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/.test(q)) return 'time tweak'
 	if (/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+(months?|weeks?|days?|years?|quarters?)\b/.test(q)) return 'range tweak'
-	if (/\b(stay|stays|keep|keeps|kept|remain|remains|still)\b/.test(q)) return 'asks to keep what is already there'
+	if (/\b(stay|stays|keep|keeps|remain|remains)\b|\bstill (be|look|use|show|read|feel|highlight|work)/.test(q)) return 'asks to keep what is already there'
+	// Restyling one element ("the chart switched to line?", "the header in uppercase?") is a tweak, not a product step.
+	if (/\b(switch(ed)? (it |them )?to|in (uppercase|lowercase|bold|italics?)|bolder|bigger|smaller|larger|rounder|thicker|thinner|lighter|darker|softer|warmer|cooler|brighter|muted|font|shade|tint|padding|spacing|aligned|alignment|corner radius|radius)\b/.test(q) && !/\b(screen|page|state|flow|version|copy of|mode)\b/.test(q)) return 'style tweak'
 	const screens = facts.screens
+	// "...for the login screen" must be about a screen that exists.
+	const named = /\b(?:for|on|in|of|to) the ([a-z-]+(?: [a-z-]+)?) (?:screen|page)\b/.exec(q)?.[1]
+	if (named && screens.length) {
+		const words = named.replace(/-/g, ' ').split(' ').filter((w) => w.length > 2)
+		const exists = screens.some((s) => {
+			const n = `${s.name} ${s.id}`.toLowerCase().replace(/[-_]/g, ' ')
+			return words.some((w) => n.includes(w.replace(/s$/, '')) || (w === 'login' && /log ?in|sign ?in/.test(n)))
+		})
+		if (!exists) return `names a ${named} screen that isn't on the canvas`
+	}
 	if (screens.length) {
 		const families = new Set(screens.map((s) => colorFamily(s.primary)).filter(Boolean))
 		for (const w of q.match(/\b[a-z]+\b/g) ?? []) {
@@ -995,10 +1008,10 @@ export function narrateDrawing(calls: ToolCall[]): string | null {
 	return `Here's ${list}.`
 }
 
-function formatToolResult(r: ToolResult): string {
+function formatToolResult(r: ToolResult, limit = 40_000): string {
 	const body = r.ok
 		? { ok: true, ...(r.data && typeof r.data === 'object' ? r.data : { result: r.data ?? 'done' }), ...(r.image ? { image: 'attached below' } : {}) }
 		: { ok: false, error: r.error }
 	const s = JSON.stringify(body)
-	return s.length > 40_000 ? `${s.slice(0, 40_000)}…(truncated)` : s
+	return s.length > limit ? `${s.slice(0, limit)}…(truncated)` : s
 }

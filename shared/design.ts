@@ -632,8 +632,11 @@ function naturalH(node: LayoutNode, w: number): number {
 	if (sizingOf(node, 'h') === 'fixed') return node.h
 	const l = fullLayout(node)
 	const cs = kids(node)
-	if (!isContainerKind(node.kind) || !l) return sizingOf(node, 'h') === 'fill' && node.kind !== 'text' ? node.h : leafHugH(node, w)
-	if (sizingOf(node, 'h') === 'fill' && !cs.length) return node.h
+	// A leaf that fills the height (a chart stretched to match the card beside it) needs only its
+	// kind's default height: its current, stretched height would keep the parent from ever shrinking.
+	if (!isContainerKind(node.kind) || !l) return sizingOf(node, 'h') === 'fill' && node.kind !== 'text' ? (KIND_DEFAULTS[node.kind as UiKind]?.props.h ?? node.h) : leafHugH(node, w)
+	// An empty frame that fills the height (a spacer) needs nothing; its stretched height must not hold the parent open.
+	if (sizingOf(node, 'h') === 'fill' && !cs.length) return 0
 	const py = l.padding[0] + l.padding[2]
 	const widths = childWidths(node, l, w)
 	if (l.mode === 'none') return Math.max(0, ...cs.map((c, i) => (c.y ?? 0) + naturalH(c, widths[i]))) + py
@@ -1338,7 +1341,8 @@ export function humanLayerName(
 	const num = rest.length > 1 && /^\d+$/.test(rest[rest.length - 1]) ? rest.pop() : undefined
 	let phrase = rest.map((w) => ABBREV[w.toLowerCase()] ?? w.toLowerCase()).join(' ')
 	const card = node.fill && node.fill !== 'transparent'
-	if (node.kind === 'frame' && node.heading) {
+	const structural = /\b(sidebar|header|footer|navigation|nav|tabs?|toolbar|hero|main|content|actions|pager dots|stats|table|form|list|grid|row|bar)\b/.test(phrase)
+	if (node.kind === 'frame' && node.heading && !structural) {
 		const h = node.heading.trim().toLowerCase()
 		phrase = `${h} ${card ? 'card' : 'section'}`
 	} else if (node.kind === 'image' && (node.h ?? 0) >= 240 && /^(art|image|img|hero|pic|illustration|visual)$/i.test(rest.join(''))) phrase = 'hero art'

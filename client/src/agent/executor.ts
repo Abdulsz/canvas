@@ -42,6 +42,7 @@ import {
 	type UiProps,
 	type UiTreeNode,
 	type LayoutSpec,
+	type LayoutNode,
 } from '../../../shared/design.ts'
 import { AGENT_NAME, type Author, type ToolResult } from '../../../shared/protocol.ts'
 import { measureTextDom } from '../design/measure.ts'
@@ -131,6 +132,37 @@ export class CanvasExecutor {
 
 	private _point(x: number, y: number) {
 		this.hooks.onAgentCursor?.(x, y)
+	}
+
+	/**
+	 * Parks the cursor beside a box (a note it just pinned, an outline) where its name
+	 * chip covers no screen and no other note: below-right, above-right, then left of it.
+	 */
+	private _parkBeside(box: Box) {
+		const editor = this.editor
+		const z = Math.max(editor.getZoomLevel(), 0.05)
+		const chipW = 150 / z
+		const chipH = 40 / z
+		const blockers = editor
+			.getCurrentPageShapes()
+			.filter((s) => isScreen(s) || (s.type === 'critique' && (s.props as { kind?: string }).kind === 'note'))
+			.map((s) => editor.getShapePageBounds(s))
+			.filter((b): b is Box => !!b && !(Math.abs(b.x - box.x) < 0.5 && Math.abs(b.y - box.y) < 0.5))
+		const view = editor.getViewportPageBounds()
+		const gap = 6 / z
+		const spots = [
+			{ x: box.maxX + gap, y: box.maxY + gap },
+			{ x: box.maxX + gap, y: box.y - chipH - gap },
+			{ x: box.x - chipW - gap, y: box.maxY + gap },
+			{ x: box.x - chipW - gap, y: box.y - chipH - gap },
+			{ x: box.x, y: box.maxY + gap },
+		]
+		const ok = (p: { x: number; y: number }) => {
+			const chip = new Box(p.x, p.y, chipW, chipH)
+			return !blockers.some((b) => Box.Collides(b, chip)) && view.contains(chip)
+		}
+		const p = spots.find(ok) ?? spots[0]
+		this._point(p.x, p.y)
 	}
 
 	/**
@@ -255,11 +287,14 @@ export class CanvasExecutor {
 		// A screen whose content doesn't fit grows taller, like a scrolling page in Figma,
 		// instead of clipping it (it never shrinks on its own).
 		if (!this.hooks.asUser && tree.props.kind === 'screen' && node.layout && node.layout.mode !== 'none') {
-			const need = layoutTree({ ...node, sizing: { ...node.sizing, h: 'hug' } }, { measure: measureTextDom }).get(node.id)?.h ?? 0
+			const need = hugHeight(node)
+			const fold = this._fold(tree as unknown as UiShape)
 			// A long page (taller than any device) hugs its content, so it never ends in a blank band.
-			const longPage = node.w >= 1000 && node.h > 1100 && need < node.h - 40
-			if (need > node.h + 1 || longPage) {
-				node.h = Math.ceil(longPage ? Math.max(1024, need) : need)
+			const longPage = !fold && node.w >= 1000 && node.h > 1100 && need < node.h - 40
+			// A screen with a fold that grew earlier shrinks back once its content fits again.
+			const regrow = !!fold && node.h > fold + 1 && Math.abs(Math.max(fold, need) - node.h) > 1
+			if (need > node.h + 1 || longPage || regrow) {
+				node.h = Math.ceil(longPage ? Math.max(1024, need) : fold ? Math.max(fold, need) : need)
 				boxes = layoutTree(node, { measure: measureTextDom })
 			}
 		}
@@ -299,11 +334,12 @@ export class CanvasExecutor {
 		const fold = this._fold(screen)
 		if (!fold) return
 		const tree = this._toTree(screen)
-		const hugNeed = (t: UiTreeNode) => {
-			const n = toLayoutNode(t)
-			return layoutTree({ ...n, sizing: { ...n.sizing, h: 'hug' } }, { measure: measureTextDom }).get(n.id)?.h ?? 0
+		const hugNeed = (t: UiTreeNode) => hugHeight(toLayoutNode(t))
+		if (hugNeed(tree) <= fold + 1) {
+			// It fits again (rows removed, spacing tightened): back to the device height.
+			if (screen.props.h > fold + 1) this.editor.updateShape({ id: screen.id, type: 'ui', props: { h: fold } } as TLShapePartial)
+			return
 		}
-		if (hugNeed(tree) <= fold + 1) return
 		const original = new Map<string, LayoutSpec>()
 		const walk = (n: UiTreeNode, fn: (n: UiTreeNode) => void) => {
 			fn(n)
@@ -312,17 +348,21 @@ export class CanvasExecutor {
 		walk(tree, (n) => {
 			if (n.meta.layout && n.meta.layout.mode !== 'none') original.set(n.id, { ...n.meta.layout, padding: [...n.meta.layout.padding] as LayoutSpec['padding'] })
 		})
-		const shrink = (v: number, f: number, min: number) => (v <= min ? v : Math.max(min, Math.round(v * f)))
-		for (const f of [0.85, 0.7, 0.55]) {
+		// Only roomy spacing gives: gaps of 12+ (down to 8) and paddings of 16+ (down to 12).
+		// Row and nav-item paddings stay, so nothing looks squeezed.
+		const shrink = (v: number, f: number, from: number, min: number) => (v < from ? v : Math.max(min, Math.round(v * f)))
+		// Gaps between sections give first; card paddings (the "room to breathe") only after.
+		const steps: [number, number][] = [[0.85, 1], [0.7, 1], [0.55, 1], [0.55, 0.85], [0.55, 0.7]]
+		for (const [f, fp] of steps) {
 			walk(tree, (n) => {
 				const o = original.get(n.id)
 				if (!o) return
 				const [t, r, b, l] = o.padding
-				const isScreen = n.props.kind === 'screen'
 				n.meta.layout = {
 					...o,
-					gap: o.mode === 'vertical' ? shrink(o.gap, f, isScreen ? 12 : 4) : o.gap,
-					padding: [shrink(t, f, isScreen ? 16 : 4), r, shrink(b, f, isScreen ? 16 : 4), l],
+					// Section gaps (24+) never drop under 16, so a page never reads as stacked.
+					gap: o.mode === 'vertical' ? shrink(o.gap, f, 12, o.gap >= 24 ? 16 : 8) : o.gap,
+					padding: [shrink(t, fp, 16, 12), r, shrink(b, fp, 16, 12), l],
 				}
 			})
 			if (hugNeed(tree) > fold + 1) continue
@@ -380,10 +420,13 @@ export class CanvasExecutor {
 			if (!['text', 'button', 'input', 'checkbox', 'badge', 'screen'].includes(n.props.kind) && (!n.props.name || n.props.name === n.id)) {
 				const kids = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0))
 				const isHeading = (c: UiTreeNode) => c.props.kind === 'text' && c.props.fontWeight >= 600 && c.props.text.length <= 28 && !/[\d$€£%]/.test(c.props.text)
-				const heading =
-					n.props.kind === 'frame' && kids.length >= 2
-						? (kids.slice(0, 2).find(isHeading) ?? kids.slice(0, 1).flatMap((c) => [...c.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).slice(0, 2)).find(isHeading))?.props.text
+				// A section heading: a short bold label over a card or list (or an uppercase eyebrow), not a name in a row.
+				const first = kids[0]
+				const headingNode =
+					n.props.kind === 'frame' && kids.length >= 2 && first && isHeading(first) && (first.props.text === first.props.text.toUpperCase() || kids.slice(1).some((c) => isContainerKind(c.props.kind)))
+						? first
 						: undefined
+				const heading = headingNode?.props.text
 				const name = humanLayerName({ id: n.id, kind: n.props.kind, heading, fill: n.props.fill, stroke: n.props.stroke, h: n.props.h }, screen)
 				if (name) {
 					n.props.name = name
@@ -399,6 +442,12 @@ export class CanvasExecutor {
 	private _semanticBadges(tree: UiTreeNode) {
 		const walk = (n: UiTreeNode) => {
 			if (n.props.kind === 'badge') {
+				// A negative delta ("-2.4%") in the positive green reads as good news: it goes red, arrow down.
+				if (/^[-−–]\s?[$€£]?\d/.test(n.props.text.trim()) && n.props.fill === '$successSoft' && n.props.textColor === '$success') {
+					n.props.fill = '$dangerSoft'
+					n.props.textColor = '$danger'
+					if (n.props.icon === 'arrow-up-right' || n.props.icon === 'trending-up') n.props.icon = 'arrow-down-right'
+				}
 				const tone = statusTone(n.props.text)
 				if (tone && /^\$(primary|primarySoft|onPrimary)$/.test(n.props.fill) && /^\$(primary|onPrimary|primarySoft|text)$/.test(n.props.textColor)) {
 					n.props.fill = `$${tone}Soft`
@@ -469,7 +518,8 @@ export class CanvasExecutor {
 		const out: Args = { id: bare(shape.id), type: p.kind }
 		if (p.name && p.name !== out.id && (shape.meta as Args)?.autoName !== p.name) out.name = p.name
 		if (p.text) out.text = p.text
-		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image', 'badge'].includes(p.kind) && (p.kind !== 'icon' || p.icon !== d.props.icon)) out.icon = p.icon
+		// Always listed (even the default star): an icon node without it reads as an empty tile to a critic.
+		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image', 'badge'].includes(p.kind)) out.icon = p.icon
 		if (isScreen(shape)) {
 			const b = this.editor.getShapePageBounds(shape)!
 			Object.assign(out, { x: Math.round(b.x), y: Math.round(b.y) })
@@ -1003,7 +1053,11 @@ export class CanvasExecutor {
 			})
 		)
 		this._pointAt(shape.id)
-		return this._node(editor.getShape(shape.id) as UiShape, true)
+		// An edit that makes a screen run past its fold ("less cramped") says so, so the model can fix it.
+		const screen = this._screenOf(editor.getShape(shape.id) as UiShape)
+		const fold = screen ? this._fold(screen) : null
+		const warnings = screen && fold && screen.props.h > fold + 1 ? this._warnings(screen).filter((w) => w.startsWith('Screen ')) : []
+		return { ...this._node(editor.getShape(shape.id) as UiShape, true), ...(warnings.length ? { warnings } : {}) }
 	}
 
 	move_node(args: Args) {
@@ -1294,7 +1348,9 @@ export class CanvasExecutor {
 		// Feedback on a collaborator's node is addressed to them even if the model forgot to say so.
 		const targetAuthor = target ? authorOf(target) : null
 		const to = String(args.addressedTo ?? '').replace(/^@/, '').trim() || (targetAuthor?.kind === 'user' ? targetAuthor.name : '')
-		const body = String(args.text ?? '').trim().slice(0, 160)
+		let body = String(args.text ?? '').trim().slice(0, 160)
+		// "@Sam" goes in the card's header: drop a leading "Sam, " / "@Sam" the model wrote too.
+		if (to) body = body.replace(new RegExp(`^@?${to.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[,:]?\\s+`, 'i'), '').replace(/^./, (c) => c.toUpperCase())
 		// Measurable claims (overflow, clipping, contrast, tap targets...) must match what the audit measured.
 		if (args.kind !== 'praise') {
 			const screens = screen ? [screen] : editor.getCurrentPageShapes().filter(isScreen)
@@ -1325,10 +1381,25 @@ export class CanvasExecutor {
 				this._arrow(leader, editor.getShape(id)!, target, { color: 'grey', dash: 'solid', size: 's', arrowheadEnd: 'dot', arrowheadStart: 'none' }, agentMeta({ role: 'annotation' }))
 			}
 		})
-		// Park the cursor below the card's corner, never on its text.
-		this._point(pos.x + W + 6, pos.y + H + 6)
+		// Park the cursor beside the card, never on its text or a screen.
+		this._parkBeside(new Box(pos.x, pos.y, W, H))
 		return { id: bare(id), x: Math.round(pos.x), y: Math.round(pos.y) }
 	}
+}
+
+/**
+ * The height a screen's content needs. Leaves that fill the height (a chart that
+ * stretches to match the card beside it) count at their kind's default height, not
+ * the height they were last stretched to, so a grown screen can shrink back.
+ */
+function hugHeight(root: LayoutNode): number {
+	const reset = (n: LayoutNode): LayoutNode => ({
+		...n,
+		...(n.sizing?.h === 'fill' && !n.children?.length && !isContainerKind(n.kind) ? { h: Math.min(n.h, KIND_DEFAULTS[n.kind as keyof typeof KIND_DEFAULTS]?.props.h ?? n.h) } : {}),
+		...(n.children ? { children: n.children.map(reset) } : {}),
+	})
+	const r = reset(root)
+	return layoutTree({ ...r, sizing: { ...r.sizing, h: 'hug' } }, { measure: measureTextDom }).get(r.id)?.h ?? 0
 }
 
 /** True when the segment a-b passes through box o. */

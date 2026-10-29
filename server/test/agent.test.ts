@@ -311,7 +311,10 @@ test('steering questions: copy tweaks and already-true asks are swapped for the 
 	assert.ok(questionProblem('Want the cash-flow chart to show the last eight months, or switch it to twelve?', facts))
 	assert.ok(questionProblem('Want the status badges to use the new green accent for received items?', facts))
 	assert.ok(questionProblem('Want the sidebar nav items to stay highlighted in the new green?', facts))
+	assert.ok(questionProblem('Want the chart switched to line?', facts))
+	assert.ok(questionProblem('Want an error state for the login screen?', facts))
 	assert.equal(questionProblem('Want an empty state for the transactions table?', facts), null)
+	assert.equal(questionProblem('Want an edit-profile screen, linked from the profile card?', facts), null)
 	const next = nextStepQuestion(facts, [])!
 	assert.match(next, /dashboard/i)
 	assert.notEqual(nextStepQuestion(facts, [next]), next)

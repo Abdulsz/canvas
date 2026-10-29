@@ -13,12 +13,14 @@ import {
 	type TLShape,
 	type TLShapeId,
 } from 'tldraw'
+import { measureTextDom } from './measure.ts'
 import { bareId } from './tree.ts'
 import {
 	contrast,
 	DEFAULT_THEME,
 	FILLED_ICONS,
 	foldHeight,
+	hugWidth,
 	ICON_PATHS,
 	iconPaths,
 	initials,
@@ -240,6 +242,15 @@ function UiView({ shape }: { shape: UiShape }) {
 		case 'badge': {
 			// Pill text stays readable on its tint in both themes (>= 4.5:1).
 			const ink = legible(textColor, fill)
+			// A badge given a fixed column width (to line up a table) still draws as a pill that
+			// hugs its label, at the start of that cell, never a stretched bar.
+			const meta = shape.meta as Partial<UiMeta>
+			const hug = hugWidth({ id: shape.id, kind: 'badge', w: p.w, h: p.h, text: p.text, icon: p.icon, fontSize: p.fontSize, fontWeight: p.fontWeight, layout: meta.layout, sizing: meta.sizing }, measureTextDom)
+			const pillW = meta.sizing?.w === 'fixed' && p.w > hug + 6 ? hug : p.w
+			if (pillW < p.w) {
+				box.width = pillW
+				if (p.align === 'right') box.marginLeft = p.w - pillW
+			}
 			style = {
 				...box,
 				...textStyle,
@@ -442,6 +453,12 @@ function paintSingleScreenExports(editor: Editor) {
 		}
 		return original(shapes, opts)
 	}) as Editor['getSvgElement']
+	// tldraw renders PNGs at pixelRatio 2 unless told otherwise, so { scale: 1 } came out
+	// at 2x (and the Export menu's { scale: 2 } at 4x). When a caller asks for a scale, that
+	// is the output scale (pixelRatio 1 unless given); tldraw's own menus (no scale) keep 2x.
+	const toImage = editor.toImage.bind(editor)
+	editor.toImage = ((shapes: Parameters<Editor['toImage']>[0], opts: Parameters<Editor['toImage']>[1] = {}) =>
+		toImage(shapes, opts.format === 'svg' || opts.scale === undefined || opts.pixelRatio !== undefined ? opts : { ...opts, pixelRatio: 1 })) as Editor['toImage']
 }
 
 /**
