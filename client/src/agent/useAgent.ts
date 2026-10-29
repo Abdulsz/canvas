@@ -24,7 +24,7 @@ export type AgentState = {
 }
 
 let logSeq = 0
-const AGENT_CURSOR_IDLE_MS = 3000
+const AGENT_CURSOR_IDLE_MS = 1200
 
 type AgentHooks = {
 	/** After the agent's focus_view ran in this tab: the shell refits for what is visible here (dock, phone sheet). */

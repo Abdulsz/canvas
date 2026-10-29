@@ -81,9 +81,9 @@ Tool results include warnings when content overflows its row or a label is clipp
 
 `client/src/shell/`:
 
-- **Top bar:** file name, **Insert** menu (screen presets by device; components: button, input, heading, text, image, card, navbar, list item, toggle, checkbox, avatar, divider, inserted into the selected screen or frame), screen theme toggle, Export (Copy code, PNG), Invite, collaborators.
+- **Top bar:** file name, **Insert** menu (screen presets by device; components: button, input, heading, text, image, card, navbar, list item, toggle, checkbox, avatar, divider, badge, chart, inserted into the selected screen or frame), **Screen theme** toggle (light/dark for the selected screen; the app itself follows the system appearance), Export (Copy code, PNG), Invite, collaborators.
 - **Layers** (left): screens and nested nodes; click to select, hover to highlight, double-click to rename.
-- **Design** tab (right): properties of the selected node: size and sizing, auto layout, theme and primary color (screens), fill / text / stroke colors with token swatches, radius, opacity, shadow, typography, content, and export (**Copy code**: standalone HTML/CSS for the node or screen, PNG @2x). With nothing selected it lists screens and new-screen presets.
+- **Design** tab (right): properties of the selected node: size and sizing, auto layout, theme and primary color (screens), fill / text / stroke colors (one row each; the swatch opens a named token picker with a custom color option), radius, opacity, shadow, typography, content, and export (**Copy code**: standalone HTML/CSS for the node or screen, PNG @2x). With nothing selected it lists screens and new-screen presets.
 - **Agent** tab (right): conversation, text input, Critique, mode, mute, Live voice.
 - **Voice dock** (floating over the canvas): mic plus live captions. Zoom to fit (agent `focus_view`, Shift+1 and Shift+2) leaves room for it. The agent's cursor shows where it is working and fades out a few seconds after it goes idle.
 
