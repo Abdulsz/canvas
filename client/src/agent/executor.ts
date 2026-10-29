@@ -60,6 +60,7 @@ const isContainer = (s: TLShape | undefined): s is UiShape => isUi(s) && isConta
 const SPEC_KEYS = [
 	'name', 'text', 'icon', 'width', 'height', 'fill', 'textColor', 'stroke', 'strokeWidth', 'radius', 'fontSize', 'fontWeight',
 	'align', 'shadow', 'opacity', 'checked', 'layout', 'gap', 'padding', 'alignItems', 'justify',
+	'chart', 'data', 'labels', 'highlight', 'prefix', 'suffix', 'tabs', 'activeTab', 'trailingIcon',
 ] as const
 
 export type ExecutorHooks = {
@@ -277,7 +278,7 @@ export class CanvasExecutor {
 		const out: Args = { id: bare(shape.id), type: p.kind }
 		if (p.name && p.name !== out.id) out.name = p.name
 		if (p.text) out.text = p.text
-		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image'].includes(p.kind) && (p.kind !== 'icon' || p.icon !== d.props.icon)) out.icon = p.icon
+		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image', 'badge'].includes(p.kind) && (p.kind !== 'icon' || p.icon !== d.props.icon)) out.icon = p.icon
 		if (isScreen(shape)) {
 			const b = this.editor.getShapePageBounds(shape)!
 			Object.assign(out, { x: Math.round(b.x), y: Math.round(b.y) })
@@ -292,11 +293,13 @@ export class CanvasExecutor {
 				if (p[k] !== dp[k]) out[k] = p[k]
 			}
 			if (p.stroke !== 'transparent' && p.strokeWidth !== dp.strokeWidth) out.strokeWidth = p.strokeWidth
-			if (['text', 'button', 'input', 'checkbox', 'avatar'].includes(p.kind)) {
+			if (['text', 'button', 'input', 'checkbox', 'avatar', 'badge'].includes(p.kind)) {
 				if (p.fontSize !== dp.fontSize) out.fontSize = p.fontSize
 				if (p.fontWeight !== dp.fontWeight) out.fontWeight = p.fontWeight
 			} else delete out.align
-			if (['icon', 'image', 'rect', 'toggle', 'divider', 'screen', 'frame'].includes(p.kind)) delete out.textColor
+			if (['icon', 'image', 'rect', 'toggle', 'divider', 'screen', 'frame', 'chart'].includes(p.kind)) delete out.textColor
+			if (m.chart && p.kind === 'chart') Object.assign(out, { chart: m.chart.type, data: m.chart.data, ...(m.chart.labels.length ? { labels: m.chart.labels } : {}), ...(m.chart.highlight !== undefined ? { highlight: m.chart.highlight } : {}), ...(m.chart.prefix ? { prefix: m.chart.prefix } : {}), ...(m.chart.suffix ? { suffix: m.chart.suffix } : {}) })
+			if (m.trailingIcon && p.kind === 'input') out.trailingIcon = m.trailingIcon
 			if ((p.kind === 'toggle' || p.kind === 'checkbox') && p.checked !== dp.checked) out.checked = p.checked
 			if (m.layout && isContainerKind(p.kind)) {
 				const l = m.layout
@@ -313,6 +316,7 @@ export class CanvasExecutor {
 			if (isScreen(shape)) {
 				const theme = { ...DEFAULT_THEME, ...((shape.meta?.theme as object) ?? {}) }
 				if (theme.mode !== DEFAULT_THEME.mode || theme.primary !== DEFAULT_THEME.primary) out.theme = theme
+				if (m.tabs) Object.assign(out, { tabs: m.tabs.items, activeTab: m.tabs.active })
 			}
 			const author = authorOf(shape)
 			if (author?.kind === 'user') out.author = { kind: author.kind, name: author.name }
@@ -476,7 +480,8 @@ export class CanvasExecutor {
 						x: pos.x,
 						y: pos.y,
 						props: tree.props,
-						meta: { ...existing.meta, ...tree.meta, theme: themeMeta, updatedBy: AGENT_AUTHOR },
+						// A rebuild replaces the tab bar too (none in the new spec = none).
+						meta: { ...Object.fromEntries(Object.entries(existing.meta).filter(([k]) => k !== 'tabs')), ...tree.meta, theme: themeMeta, updatedBy: AGENT_AUTHOR },
 					} as TLShapePartial)
 					for (const child of tree.children) this._createTree(child, id)
 				} else {
@@ -854,15 +859,30 @@ export class CanvasExecutor {
 		const id = toId(args.id)
 		const target = args.targetShapeId ? editor.getShape(toId(args.targetShapeId)) : undefined
 		if (args.targetShapeId && !target) throw new Error(`No shape with id "${args.targetShapeId}". Nodes: ${this._knownIds(isUi)}`)
-		// Comments sit outside the screen, to the right of the node's screen.
+		// Comments sit outside the screen (right side first, then left), level with the node,
+		// readable at the current zoom, clear of screens and their name labels, and in view.
 		const screen = target ? this._screenOf(target) : null
 		const tb = target ? editor.getShapePageBounds(target) : null
 		const sb = screen ? editor.getShapePageBounds(screen) : tb
-		const NOTE = 200
-		const center = editor.getViewportPageBounds().center
-		const rect = tb && sb ? new Box(sb.maxX + 60, tb.y, NOTE, NOTE) : new Box(center.x - NOTE / 2, center.y - NOTE / 2, NOTE, NOTE)
+		const zoom = editor.getZoomLevel()
+		const scale = Math.min(1.8, Math.max(1, 0.5 / Math.max(zoom, 0.05)))
+		const NOTE = 200 * scale
+		const view = editor.getViewportPageBounds()
 		const ignore = new Set<string>([id, ...(target ? [target.id] : [])])
-		const pos = findFreeSpot(editor, rect, { avoidAll: true, ignore })
+		const y = tb ? Math.max(tb.y - 20, (sb?.y ?? tb.y)) : view.center.y - NOTE / 2
+		const candidates = tb && sb ? [new Box(sb.maxX + 48, y, NOTE, NOTE), new Box(sb.x - 48 - NOTE, y, NOTE, NOTE)] : [new Box(view.center.x - NOTE / 2, view.center.y - NOTE / 2, NOTE, NOTE)]
+		const inView = (b: Box) => b.x >= view.x && b.y >= view.y && b.maxX <= view.maxX && b.maxY <= view.maxY
+		let pos: { x: number; y: number } | null = null
+		for (const rect of candidates) {
+			const spot = findFreeSpot(editor, rect, { avoidAll: true, ignore })
+			const box = new Box(spot.x, spot.y, NOTE, NOTE)
+			if (inView(box)) {
+				pos = spot
+				break
+			}
+			pos ??= spot
+		}
+		pos ??= { x: candidates[0].x, y: candidates[0].y }
 		const kindColor: Record<string, TLDefaultColorStyle> = {
 			issue: 'light-red',
 			suggestion: 'yellow',
@@ -885,7 +905,7 @@ export class CanvasExecutor {
 				x: pos.x,
 				y: pos.y,
 				meta: agentMeta({ role: 'comment', kind: args.kind }),
-				props: { richText: toRichText(text), color: kindColor[args.kind] ?? 'yellow', size: 's' },
+				props: { richText: toRichText(text), color: kindColor[args.kind] ?? 'yellow', size: 's', font: 'sans', scale },
 			})
 			if (target) {
 				this._arrow(leader, editor.getShape(id)!, target, { color: 'grey', dash: 'dotted', size: 's' }, agentMeta({ role: 'annotation' }))

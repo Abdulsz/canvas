@@ -6,6 +6,7 @@
 // evolve without schema migrations. See docs/DESIGN_PLAN.md.
 
 import { T } from '@tldraw/validate'
+import { artSvg, chartSvg, homeIndicatorSvg, isPhoneScreen, normalizeChart, normalizeTabs, statusBarSvg, tabBarSvg, type ChartSpec, type TabsSpec } from './visuals.ts'
 
 // ------------------------------------------------------------------ types
 
@@ -22,6 +23,8 @@ export const UI_KINDS = [
 	'checkbox',
 	'divider',
 	'rect',
+	'badge',
+	'chart',
 ] as const
 export type UiKind = (typeof UI_KINDS)[number]
 
@@ -73,6 +76,12 @@ export type UiMeta = {
 	layout?: LayoutSpec
 	sizing: Sizing
 	order?: number
+	/** Chart data (kind 'chart'). */
+	chart?: ChartSpec
+	/** Bottom tab bar of a phone screen. */
+	tabs?: TabsSpec
+	/** Trailing icon of an input (e.g. 'eye' on a password field). */
+	trailingIcon?: string
 	theme?: ThemeSpec
 }
 
@@ -101,6 +110,23 @@ export type UiNodeSpec = {
 	padding?: number | number[]
 	alignItems?: AlignItems
 	justify?: Justify
+	/** chart: 'bar' | 'line', with data (numbers), labels (x axis), highlight (index), prefix/suffix for values. */
+	chart?: string
+	data?: unknown[]
+	labels?: unknown[]
+	highlight?: number
+	prefix?: string
+	suffix?: string
+	/** Screens: bottom tab bar items and the active one. */
+	tabs?: unknown
+	activeTab?: number
+	/** Inputs: an icon at the end (eye on a password field, chevron on a picker). */
+	trailingIcon?: string
+	/** Frames: build `template` once per entry of `items`, replacing {key} with the entry's values. */
+	template?: UiNodeSpec
+	items?: Record<string, unknown>[]
+	/** Frames with items: a divider between generated rows. */
+	dividers?: boolean
 	x?: number
 	y?: number
 	children?: UiNodeSpec[]
@@ -182,6 +208,12 @@ export const KIND_DEFAULTS: Record<UiKind, KindDefault> = {
 	checkbox: { props: { w: 120, h: 22, fill: '$primary', textColor: '$text', fontSize: 15 }, sizing: { w: 'hug', h: 'hug' } },
 	divider: { props: { w: 100, h: 1, fill: '$border' }, sizing: { w: 'fill', h: 'fixed' } },
 	rect: { props: { w: 100, h: 100, fill: '$surfaceAlt', radius: 8 }, sizing: { w: 'fixed', h: 'fixed' } },
+	badge: {
+		props: { w: 60, h: 26, fill: '$primarySoft', textColor: '$primary', radius: 999, fontSize: 13, fontWeight: 600, align: 'center' },
+		sizing: { w: 'hug', h: 'hug' },
+		layout: { mode: 'horizontal', gap: 4, padding: [4, 10, 4, 10], alignItems: 'center', justify: 'center' },
+	},
+	chart: { props: { w: 400, h: 220, fill: 'transparent', textColor: '$muted' }, sizing: { w: 'fill', h: 'fixed' } },
 }
 
 export const DEVICES = {
@@ -196,7 +228,7 @@ export type Device = keyof typeof DEVICES
 export const DEFAULT_PRIMARY = '#5b5bd6'
 export const DEFAULT_THEME: ThemeSpec = { mode: 'light', primary: DEFAULT_PRIMARY }
 
-export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'primarySoft', 'onPrimary', 'text', 'muted', 'border', 'success', 'danger'] as const
+export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'primarySoft', 'onPrimary', 'text', 'muted', 'border', 'success', 'successSoft', 'warning', 'warningSoft', 'danger', 'dangerSoft'] as const
 export type Token = (typeof TOKENS)[number]
 
 // Refined neutrals (a faint cool cast, never pure gray on gray). Light: an
@@ -215,20 +247,28 @@ export const THEMES: Record<ThemeMode, Record<Token, string>> = {
 		muted: '#62646f',
 		border: '#e3e4e9',
 		success: '#15803d',
+		successSoft: '#dcfce7',
+		warning: '#92400e',
+		warningSoft: '#fef3c7',
 		danger: '#dc2626',
+		dangerSoft: '#fee2e2',
 	},
 	dark: {
 		bg: '#0b0c0f',
-		surface: '#15161b',
-		surfaceAlt: '#1e2027',
+		surface: '#16171c',
+		surfaceAlt: '#262830',
 		primary: DEFAULT_PRIMARY,
-		primarySoft: '#1f2040',
+		primarySoft: '#2a2b55',
 		onPrimary: '#ffffff',
 		text: '#f4f4f6',
-		muted: '#9b9daa',
-		border: '#272932',
+		muted: '#a1a3af',
+		border: '#2c2e38',
 		success: '#4ade80',
+		successSoft: '#13301f',
+		warning: '#fbbf24',
+		warningSoft: '#33270d',
 		danger: '#f87171',
+		dangerSoft: '#3a1717',
 	},
 }
 
@@ -242,7 +282,7 @@ export function resolveColor(value: string | undefined, theme: Partial<ThemeSpec
 		const primary = themePrimary(theme)
 		if (key === 'primary') return primary
 		// A quiet tint of the brand for icon tiles, chips and avatars.
-		if (key === 'primarySoft') return parseHex(primary) ? mixHex(primary, THEMES[mode].surface, mode === 'dark' ? 0.84 : 0.88) : THEMES[mode].primarySoft
+		if (key === 'primarySoft') return parseHex(primary) ? mixHex(primary, THEMES[mode].surface, mode === 'dark' ? 0.74 : 0.88) : THEMES[mode].primarySoft
 		// Text on the brand color: white, or near-black when the brand is light (yellow, mint...).
 		if (key === 'onPrimary') return contrast(primary, '#ffffff') >= 3 ? THEMES[mode].onPrimary : '#111827'
 		return THEMES[mode][key as Token]
@@ -263,7 +303,7 @@ export function themePrimary(theme: Partial<ThemeSpec>): string {
 	return c
 }
 
-function parseHex(hex: string): [number, number, number] | null {
+export function parseHex(hex: string): [number, number, number] | null {
 	let h = hex.trim().replace(/^#/, '')
 	if (/^[0-9a-f]{3}$/i.test(h)) h = h.replace(/./g, (x) => x + x)
 	if (!/^[0-9a-f]{6}$/i.test(h)) return null
@@ -271,7 +311,7 @@ function parseHex(hex: string): [number, number, number] | null {
 	return [n >> 16, (n >> 8) & 255, n & 255]
 }
 
-function mixHex(a: string, b: string, t: number): string {
+export function mixHex(a: string, b: string, t: number): string {
 	const x = parseHex(a)!
 	const y = parseHex(b)!
 	return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')
@@ -348,6 +388,18 @@ export const ICON_PATHS: Record<string, string> = {
 	grid: 'M3 3h7v7H3z M14 3h7v7h-7z M14 14h7v7h-7z M3 14h7v7H3z',
 	shield: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
 	moon: 'M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z',
+	google: 'M21.6 12.23c0-.68-.06-1.36-.18-2.02H12v3.83h5.4a4.62 4.62 0 0 1-2 3.03v2.51h3.24c1.9-1.75 2.96-4.33 2.96-7.35z M12 22c2.7 0 4.98-.9 6.64-2.42l-3.24-2.51c-.9.6-2.05.96-3.4.96-2.6 0-4.81-1.76-5.6-4.12H3.06v2.59A10 10 0 0 0 12 22z M6.4 13.9a6 6 0 0 1 0-3.8V7.51H3.06a10 10 0 0 0 0 8.98z M12 5.98c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.6 9.6 0 0 0 12 2a10 10 0 0 0-8.94 5.51L6.4 10.1C7.19 7.74 9.4 5.98 12 5.98z',
+	apple: 'M16.37 12.6c-.02-2.2 1.8-3.26 1.88-3.31a4.05 4.05 0 0 0-3.19-1.73c-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.88-.76a4.26 4.26 0 0 0-3.6 2.19c-1.54 2.67-.39 6.62 1.1 8.78.73 1.06 1.6 2.25 2.74 2.2 1.1-.04 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.07 2.65-2.13a9.4 9.4 0 0 0 1.2-2.47 3.83 3.83 0 0 1-2.26-3.55z M14.18 6.17c.6-.74 1.01-1.75.9-2.77-.87.04-1.93.58-2.55 1.31-.56.64-1.05 1.68-.92 2.67.97.08 1.96-.49 2.57-1.21z',
+	receipt: 'M4 2v20l3-2 3 2 2-1.5L14 22l3-2 3 2V2l-3 2-3-2-2 1.5L10 2 7 4z M8 9h8 M8 13h8 M8 17h5',
+	refresh: 'M23 4v6h-6 M1 20v-6h6 M3.51 9a9 9 0 0 1 14.85-3.36L23 10 M1 14l4.64 4.36A9 9 0 0 0 20.49 15',
+	wallet: 'M20 7H5a2 2 0 0 1 0-4h13v4 M3 5v14a2 2 0 0 0 2 2h15V7 M16 14h.01',
+	'eye-off': 'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94 M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19 M1 1l22 22 M14.12 14.12a3 3 0 1 1-4.24-4.24',
+	headphones: 'M3 18v-6a9 9 0 0 1 18 0v6 M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3z M3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z',
+	music: 'M9 18V5l12-2v13 M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M21 16a3 3 0 1 1-6 0a3 3 0 1 1 6 0z',
+	target: 'M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0z M18 12a6 6 0 1 1-12 0a6 6 0 1 1 12 0z M14 12a2 2 0 1 1-4 0a2 2 0 1 1 4 0z',
+	inbox: 'M22 12h-6l-2 3h-4l-2-3H2 M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z',
+	folder: 'M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z',
+	'check-circle': 'M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4L12 14.01l-3-3',
 	sun: 'M17 12a5 5 0 1 1-10 0a5 5 0 1 1 10 0z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42',
 }
 export const ICONS = Object.keys(ICON_PATHS)
@@ -467,9 +519,10 @@ function leafHugW(node: LayoutNode): number {
 	switch (node.kind) {
 		case 'text':
 			return measureText(text, fs, undefined, node.fontWeight).w
-		case 'button': {
+		case 'button':
+		case 'badge': {
 			const t = text ? measureText(text, fs, undefined, node.fontWeight).w : 0
-			const icon = node.icon ? Math.round(fs * 1.25) : 0
+			const icon = node.icon ? Math.round(fs * (node.kind === 'badge' ? 1 : 1.25)) : 0
 			return Math.ceil(t + icon + (t && icon ? (l?.gap ?? 8) : 0) + padX)
 		}
 		case 'checkbox':
@@ -499,6 +552,10 @@ function leafHugH(node: LayoutNode, w: number): number {
 			return measureText(node.text ?? '', fs, w, node.fontWeight).h
 		case 'checkbox':
 			return Math.max(20, Math.ceil(fs * LINE_HEIGHT))
+		case 'badge': {
+			const l = fullLayout(node)
+			return Math.ceil(fs * LINE_HEIGHT) + (l ? l.padding[0] + l.padding[2] : 8)
+		}
 		case 'button':
 		case 'input':
 			return Math.max(Math.ceil(fs * LINE_HEIGHT) + 24, 40)
@@ -694,6 +751,20 @@ export function applySpec(props: UiProps, meta: UiMeta, spec: Partial<UiNodeSpec
 	if (oneOf(spec.shadow, ['none', 'sm', 'md', 'lg'] as const)) p.shadow = spec.shadow!
 	if (typeof spec.checked === 'boolean') p.checked = spec.checked
 	if (p.icon && !ICON_PATHS[p.icon]) p.icon = ICONS.find((i) => p.icon.includes(i)) ?? 'star'
+	if (p.kind === 'chart') {
+		const chart = normalizeChart(spec as Record<string, any>, m.chart)
+		if (chart) m.chart = chart
+	}
+	if (p.kind === 'screen' && (spec.tabs !== undefined || spec.activeTab !== undefined)) {
+		const tabs = normalizeTabs(spec as Record<string, any>, m.tabs)
+		if (tabs) m.tabs = tabs
+		else delete m.tabs
+	}
+	if (spec.trailingIcon !== undefined && p.kind === 'input') {
+		const t = String(spec.trailingIcon ?? '')
+		if (t && t !== 'none') m.trailingIcon = ICON_PATHS[t] ? t : (ICONS.find((i) => t.includes(i)) ?? 'chevron-right')
+		else delete m.trailingIcon
+	}
 	for (const [key, axis] of [['width', 'w'], ['height', 'h']] as const) {
 		const v = spec[key]
 		if (v === 'fill' || v === 'hug') m.sizing[axis] = v
@@ -738,6 +809,7 @@ export function kindDefaults(kind: UiKind): { props: UiProps; meta: UiMeta } {
  * (e.g. 'screen' for create_screen).
  */
 export function specToTree(spec: UiNodeSpec, kind?: UiKind): UiTreeNode {
+	spec = expandTemplates(spec)
 	const k = kind ?? normalizeKind(spec.type)
 	const base = kindDefaults(k)
 	const { props, meta } = applySpec(base.props, base.meta, spec)
@@ -752,8 +824,50 @@ export function specToTree(spec: UiNodeSpec, kind?: UiKind): UiTreeNode {
 	return { id: String(spec.id ?? ''), props, meta, x: num(spec.x) ?? 0, y: num(spec.y) ?? 0, children }
 }
 
+/**
+ * Repeats a frame's `template` once per entry of `items` (replacing {key} in
+ * every string with the entry's value; a field that is just "{key}" with no
+ * value is dropped so the default applies). Generated ids get a _1, _2...
+ * suffix. With `dividers`, a divider goes between rows. Lets the model write a
+ * list, nav, stat row or table once instead of N times.
+ */
+export function expandTemplates(spec: UiNodeSpec): UiNodeSpec {
+	if (!spec || typeof spec !== 'object') return spec
+	let children = Array.isArray(spec.children) ? spec.children : undefined
+	const tpl = spec.template
+	if (tpl && typeof tpl === 'object' && Array.isArray(spec.items) && spec.items.length) {
+		const base = String(tpl.id ?? `${spec.id}_item`)
+		const generated: UiNodeSpec[] = []
+		spec.items.slice(0, 40).forEach((item, i) => {
+			const vars = item && typeof item === 'object' ? (item as Record<string, unknown>) : { text: item }
+			if (i && spec.dividers) generated.push({ id: `${spec.id}_div_${i}`, type: 'divider' })
+			generated.push(fillTemplate({ ...tpl, id: base }, vars, i + 1))
+		})
+		children = [...(children ?? []), ...generated]
+	}
+	const { template: _t, items: _i, dividers: _d, ...rest } = spec
+	return children ? { ...rest, children: children.map((c) => expandTemplates(c)) } : rest
+}
+
+function fillTemplate(node: UiNodeSpec, vars: Record<string, unknown>, n: number): UiNodeSpec {
+	const out: Record<string, unknown> = {}
+	for (const [k, v] of Object.entries(node)) {
+		if (k === 'children' && Array.isArray(v)) out.children = v.map((c) => fillTemplate(c, vars, n))
+		else if (k === 'id') out.id = `${String(v)}_${n}`
+		else if (typeof v === 'string' && v.includes('{')) {
+			const whole = /^\{(\w+)\}$/.exec(v)
+			if (whole) {
+				if (vars[whole[1]] !== undefined && vars[whole[1]] !== null) out[k] = vars[whole[1]]
+			} else out[k] = v.replace(/\{(\w+)\}/g, (_, key) => (vars[key] === undefined || vars[key] === null ? '' : String(vars[key])))
+		} else out[k] = v
+	}
+	return out as UiNodeSpec
+}
+
 /** Converts a resolved tree into the plain tree layoutTree works on. */
 export function toLayoutNode(node: UiTreeNode): LayoutNode {
+	// A tab bar is drawn at the bottom of the screen: keep content clear of it.
+	const layout = node.meta.tabs && node.meta.layout ? { ...node.meta.layout, padding: [node.meta.layout.padding[0], node.meta.layout.padding[1], Math.max(node.meta.layout.padding[2], 98), node.meta.layout.padding[3]] as LayoutSpec['padding'] } : node.meta.layout
 	return {
 		id: node.id,
 		kind: node.props.kind,
@@ -766,7 +880,7 @@ export function toLayoutNode(node: UiTreeNode): LayoutNode {
 		fontSize: node.props.fontSize,
 		fontWeight: node.props.fontWeight,
 		sizing: node.meta.sizing,
-		layout: node.meta.layout,
+		layout,
 		children: [...node.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map(toLayoutNode),
 	}
 }
@@ -841,18 +955,20 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 			else s.push('display: flex', `flex-direction: ${l.mode === 'horizontal' ? 'row' : 'column'}`, `gap: ${l.gap}px`, `align-items: ${FLEX_ALIGN[l.alignItems]}`, `justify-content: ${FLEX_ALIGN[l.justify]}`)
 			s.push(`padding: ${l.padding.map((v) => `${v}px`).join(' ')}`)
 		}
-		if (p.fill !== 'transparent' && p.kind !== 'toggle' && p.kind !== 'checkbox' && p.kind !== 'icon') s.push(`background: ${cssColor(p.fill)}`)
+		if (p.fill !== 'transparent' && p.kind !== 'toggle' && p.kind !== 'checkbox' && p.kind !== 'image') s.push(`background: ${cssColor(p.fill)}`)
+		if (p.kind === 'icon' || p.kind === 'badge') s.push('display: inline-flex', 'align-items: center', 'justify-content: center')
 		if (p.stroke !== 'transparent') s.push(`border: ${p.strokeWidth}px solid ${cssColor(p.stroke)}`)
 		if (p.radius) s.push(`border-radius: ${p.radius}px`)
 		if (p.kind === 'avatar') s.push('border-radius: 50%', 'display: flex', 'align-items: center', 'justify-content: center')
 		if (p.shadow !== 'none') s.push(`box-shadow: ${SHADOWS[p.shadow]}`)
 		if (p.opacity !== 1) s.push(`opacity: ${p.opacity}`)
-		if (['text', 'button', 'input', 'checkbox', 'avatar'].includes(p.kind)) {
+		if (['text', 'button', 'input', 'checkbox', 'avatar', 'badge'].includes(p.kind)) {
 			s.push(`color: ${cssColor(p.textColor)}`, `font-size: ${p.fontSize}px`, `font-weight: ${p.fontWeight}`, `line-height: ${LINE_HEIGHT}`)
 			if (letterSpacingFor(p.fontSize) !== 'normal') s.push(`letter-spacing: ${letterSpacingFor(p.fontSize)}`)
 			if (p.kind === 'text') s.push(`text-align: ${p.align}`, 'margin: 0')
 		}
-		if (p.kind === 'screen') s.push('overflow: hidden', 'box-sizing: border-box')
+		if (p.kind === 'screen') s.push('overflow: hidden', 'box-sizing: border-box', 'position: relative')
+		if (p.kind === 'image') s.push('overflow: hidden', 'position: relative')
 		const style = `style="${s.join('; ')}"`
 		const label = esc(p.text)
 		const icon = (size: number, color: string) => (p.icon ? iconSvg(p.icon, size, color) : '')
@@ -862,12 +978,16 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 				return `<p ${style}>${label}</p>`
 			case 'button':
 				return `<button ${style}>${icon(Math.round(p.fontSize * 1.25), 'currentColor')}${label}</button>`
+			case 'badge':
+				return `<span ${style}>${icon(Math.round(p.fontSize), 'currentColor')}${label}</span>`
 			case 'input':
-				return `<label ${style}>${icon(20, 'var(--muted)')}<input placeholder="${label}" style="all: unset; flex: 1; color: var(--text)" /></label>`
+				return `<label ${style}>${icon(20, 'var(--muted)')}<input placeholder="${label}" style="all: unset; flex: 1; color: var(--text)" />${n.meta.trailingIcon ? iconSvg(n.meta.trailingIcon, 20, 'var(--muted)') : ''}</label>`
 			case 'image':
-				return `<div ${style} role="img" aria-label="${label || 'image'}"></div>`
+				return `<div ${style} role="img" aria-label="${label || 'image'}">${artSvg(n.id, p.w, p.h, theme, p.text)}${p.icon ? `<span style="position: absolute; inset: 0; display: flex; align-items: center; justify-content: center">${iconSvg(p.icon, 28, '#ffffff')}</span>` : ''}</div>`
+			case 'chart':
+				return `<div ${style} role="img" aria-label="${esc(p.name || 'chart')}">${n.meta.chart ? chartSvg(n.meta.chart, p.w, p.h, theme, n.id) : ''}</div>`
 			case 'icon':
-				return `<span ${style}>${iconSvg(p.icon, Math.min(p.w, p.h), cssColor(p.textColor))}</span>`
+				return `<span ${style}>${iconSvg(p.icon, Math.round(Math.min(p.w, p.h) * (p.fill === 'transparent' ? 1 : 0.55)), cssColor(p.textColor))}</span>`
 			case 'avatar':
 				return `<div ${style}>${p.icon ? icon(Math.round(p.w * 0.5), 'currentColor') : esc(initials(p.text || p.name))}</div>`
 			case 'toggle':
@@ -878,7 +998,15 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 				return `<hr ${style.replace('style="', 'style="border: 0; margin: 0; ')} />`
 			default: {
 				const inner = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map((c) => node(c, childParent)).join('\n')
-				return `<div data-name="${esc(p.name)}" ${style}>\n${inner}\n</div>`
+				let chrome = ''
+				if (p.kind === 'screen') {
+					const ink = resolveColor('$text', theme)
+					const at = (pos: string, svg: string) => `<div style="position: absolute; left: 0; ${pos}: 0; line-height: 0">${svg}</div>`
+					if (isPhoneScreen(p.w, p.h)) chrome += at('top', statusBarSvg(p.w, ink))
+					if (n.meta.tabs) chrome += at('bottom', tabBarSvg(p.w, n.meta.tabs, theme))
+					if (isPhoneScreen(p.w, p.h)) chrome += at('bottom', homeIndicatorSvg(p.w, ink))
+				}
+				return `<div data-name="${esc(p.name)}" ${style}>\n${chrome}${inner}\n</div>`
 			}
 		}
 	}

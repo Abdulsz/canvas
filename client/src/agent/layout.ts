@@ -9,7 +9,14 @@ function obstacleBoxes(editor: Editor, opts: Obstacles): Box[] {
 		if (opts.ignore?.has(shape.id)) continue
 		if (!opts.avoidAll && authorOf(shape)?.kind === 'agent') continue
 		const b = editor.getShapePageBounds(shape)
-		if (b) boxes.push(b.clone().expandBy(20))
+		if (!b) continue
+		const box = b.clone().expandBy(20)
+		// A screen's name label sits just above it: keep that clear too.
+		if (shape.type === 'ui' && (shape.props as { kind?: string }).kind === 'screen') {
+			box.y -= 28
+			box.h += 28
+		}
+		boxes.push(box)
 	}
 	// Keep clear of where other students are working right now.
 	const now = Date.now()
