@@ -43,7 +43,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 		>
 			{/* Left: layers toggle (mobile), product mark, file name */}
 			<button
-				className={`tap flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] transition-colors duration-150 md:hidden ${layersOpen ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'text-[var(--label-2)] hover:bg-[var(--fill)]'}`}
+				className={`tap flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] transition-colors duration-150 md:hidden ${layersOpen ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'text-[var(--label-2)] hover:bg-[var(--fill)] active:bg-[var(--press)]'}`}
 				onClick={onToggleLayers}
 				aria-label="Layers"
 				aria-pressed={layersOpen}
@@ -70,7 +70,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 			<div className="flex flex-1 justify-center">
 				<div ref={insert.ref} className="relative">
 					<button
-						className={`tap flex h-9 items-center gap-1.5 rounded-full px-3.5 text-[13px] font-semibold transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.97] md:h-8 ${
+						className={`tap flex h-11 items-center gap-1.5 rounded-full px-4 text-[14px] font-semibold transition-[background-color,color,box-shadow,transform] duration-150 active:scale-[0.97] md:h-8 md:px-3.5 md:text-[13px] ${
 							insert.open ? 'bg-[var(--accent)] text-[var(--on-accent)]' : 'bg-[var(--card)] text-[var(--label)] shadow-[var(--shadow-control)] hover:bg-[var(--fill-2)]'
 						}`}
 						onClick={() => insert.setOpen(!insert.open)}
@@ -81,9 +81,13 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 						<PlusIcon className="h-3.5 w-3.5" /> Insert
 					</button>
 					{insert.open && editor && exec && (
-						<div className={`${menuPanel} left-1/2 w-[372px] max-w-[calc(100vw-24px)] -translate-x-1/2`} role="menu" aria-label="Insert">
-							<div className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Screens</div>
-							<div className="grid grid-cols-2 gap-0.5">
+						<div
+							className={`${menuPanel} scroll-soft left-1/2 w-[392px] max-w-[calc(100vw-24px)] -translate-x-1/2 overflow-y-auto max-md:fixed max-md:inset-x-3 max-md:top-[calc(56px+env(safe-area-inset-top))] max-md:mt-0 max-md:max-h-[calc(100dvh-72px-env(safe-area-inset-top))] max-md:w-auto max-md:max-w-none max-md:translate-x-0`}
+							role="menu"
+							aria-label="Insert"
+						>
+							<div className="px-2.5 pb-1.5 pt-1 text-[12px] font-semibold text-[var(--label)]">Screens</div>
+							<div className="grid grid-cols-2 gap-1 max-[480px]:grid-cols-1">
 								{(Object.keys(DEVICES) as Device[]).map((d) => (
 									<MenuItem
 										key={d}
@@ -97,23 +101,23 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 									/>
 								))}
 							</div>
-							<div className="mx-2 my-1.5 h-px bg-[var(--separator)]" />
-							<div className="flex items-baseline justify-between px-2 pb-1 pt-0.5">
-								<span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Components</span>
-								<span className="text-[11px] text-[var(--label-3)]">into the selected screen or frame</span>
+							<div className="mx-2 my-2 h-px bg-[var(--separator)]" />
+							<div className="px-2.5 pb-2 pt-0.5">
+								<div className="text-[12px] font-semibold text-[var(--label)]">Components</div>
+								<div className="mt-0.5 text-[12px] leading-snug text-[var(--label-2)]">Added to the selected screen or frame</div>
 							</div>
-							<div className="grid grid-cols-3 gap-1">
+							<div className="grid grid-cols-3 gap-1 max-[420px]:grid-cols-2">
 								{COMPONENTS.map((c) => (
 									<button
 										key={c.key}
 										role="menuitem"
-										className="flex h-[58px] flex-col items-center justify-center gap-1.5 rounded-[9px] text-[12px] text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill)] active:bg-[var(--press)]"
+										className="flex h-[64px] flex-col items-center justify-center gap-1.5 rounded-[10px] text-[12px] font-medium text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill)] active:scale-[0.97] active:bg-[var(--press)]"
 										onClick={() => {
 											insert.setOpen(false)
 											void insertComponent(editor, exec, c.key)
 										}}
 									>
-										<span className="flex h-7 w-7 items-center justify-center rounded-[7px] bg-[var(--fill-2)] text-[var(--label-2)]">
+										<span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[var(--fill)] text-[var(--label)]" aria-hidden>
 											<KindIcon kind={c.key === 'card' ? 'rect' : c.key === 'navbar' || c.key === 'listItem' ? 'frame' : c.kind} className="h-4 w-4" />
 										</span>
 										{c.label}
@@ -134,7 +138,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					))}
 				</div>
 				<button
-					className="tap flex h-10 w-10 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] disabled:opacity-40 disabled:hover:bg-transparent md:h-8 md:w-8"
+					className="tap flex h-11 w-11 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] active:bg-[var(--press)] disabled:opacity-40 disabled:hover:bg-transparent md:h-8 md:w-8"
 					disabled={!target}
 					onClick={() => target && void exec?.run('set_theme', { screenId: target.id, mode: target.mode === 'dark' ? 'light' : 'dark' })}
 					title={target ? `Switch “${target.name}” to ${target.mode === 'dark' ? 'light' : 'dark'} mode` : 'Theme (select a screen)'}
@@ -144,7 +148,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 				</button>
 				<div ref={exportMenu.ref} className="relative">
 					<button
-						className="tap flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill)] disabled:opacity-40 md:h-8"
+						className="tap flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-medium text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill)] active:bg-[var(--press)] disabled:opacity-40 md:h-8 md:min-w-8"
 						aria-label="Export"
 						onClick={() => exportMenu.setOpen(!exportMenu.open)}
 						disabled={!target}
@@ -156,7 +160,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					</button>
 					{exportMenu.open && editor && target && (
 						<div className={`${menuPanel} right-0 w-[230px]`} role="menu" aria-label="Export">
-							<div className="truncate px-2 pb-1 pt-1 text-[11px] text-[var(--label-3)]">{target.name}</div>
+							<div className="truncate px-2.5 pb-1.5 pt-1 text-[12px] font-semibold text-[var(--label)]">{target.name}</div>
 							<MenuItem
 								icon={<CodeIcon className="h-4 w-4" />}
 								label="Copy code"
@@ -179,7 +183,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					)}
 				</div>
 				<button
-					className="tap flex h-9 items-center gap-1.5 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.97] md:h-8"
+					className="tap flex h-11 items-center gap-1.5 rounded-full bg-[var(--accent)] px-4 text-[14px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.97] md:h-8 md:px-3.5 md:text-[13px]"
 					onClick={() => {
 						void navigator.clipboard?.writeText(location.href).catch(() => {})
 						setCopied(true)

@@ -74,13 +74,13 @@ function PageOverview({ editor, exec }: { editor: Editor; exec: CanvasExecutor }
 					{list.map((s) => (
 						<button
 							key={s.id}
-							className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-[12px] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-2)]"
+							className="flex h-8 w-full items-center gap-2 rounded-[6px] px-2 text-left text-[12px] active:bg-[var(--press)] pointer-coarse:h-11 pointer-coarse:text-[14px] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-2)]"
 							onClick={() => selectAndReveal(editor, s.id)}
 						>
 							<KindIcon kind="screen" className="h-3.5 w-3.5 text-[var(--label-2)]" />
 							<span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
 							{s.dark && <MoonIcon className="h-3 w-3 text-[var(--label-3)]" />}
-							<span className="shrink-0 tabular-nums text-[11px] text-[var(--label-3)]">
+							<span className="shrink-0 tabular-nums text-[12px] text-[var(--label-3)]">
 								{Math.round(s.w)}×{Math.round(s.h)}
 							</span>
 						</button>
@@ -92,13 +92,13 @@ function PageOverview({ editor, exec }: { editor: Editor; exec: CanvasExecutor }
 					{(['iphone', 'android', 'tablet', 'desktop'] as Device[]).map((d) => (
 						<button
 							key={d}
-							className="flex h-12 flex-col items-start justify-center rounded-[8px] bg-[var(--fill-2)] px-2.5 text-left transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill)]"
+							className="flex h-12 flex-col items-start justify-center rounded-[8px] bg-[var(--fill-2)] px-2.5 active:bg-[var(--press)] text-left transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill)]"
 							onClick={() => void insertScreen(editor, exec, d)}
 						>
 							<span className="flex items-center gap-1 text-[12px] font-medium">
 								<PlusIcon className="h-3 w-3" /> {DEVICE_LABELS[d]}
 							</span>
-							<span className="text-[11px] tabular-nums text-[var(--label-3)]">
+							<span className="text-[12px] tabular-nums text-[var(--label-3)]">
 								{DEVICES[d].w}×{DEVICES[d].h}
 							</span>
 						</button>
@@ -143,13 +143,13 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 		<div className="scroll-soft min-h-0 flex-1 overflow-y-auto" data-testid="design-properties">
 			{/* Identity */}
 			<div className="hairline-b flex items-center gap-2 px-3.5 py-2.5">
-				<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-[color-mix(in_srgb,#0D99FF_14%,transparent)] text-[#0D99FF]">
+				<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[7px] bg-[color-mix(in_srgb,#0D99FF_14%,transparent)] text-[var(--link)]">
 					<KindIcon kind={kind} className="h-4 w-4" />
 				</span>
 				<div className="min-w-0 flex-1">
 					<TextField label="Layer name" value={layerName(shape, screen ? bareId(screen.id) : null)} onCommit={(name) => update({ name })} placeholder={KIND_LABELS[kind]} />
 				</div>
-				<span className="shrink-0 rounded-full bg-[var(--fill-2)] px-2 py-0.5 text-[11px] font-medium text-[var(--label-2)]">{KIND_LABELS[kind]}</span>
+				<span className="shrink-0 rounded-full bg-[var(--fill-2)] px-2 py-0.5 text-[12px] font-medium text-[var(--label-2)]">{KIND_LABELS[kind]}</span>
 			</div>
 
 			<Section title={isScreenNode ? 'Screen' : 'Size'}>
@@ -228,7 +228,7 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 						]}
 					/>
 					<div className="flex items-center gap-2">
-						<span className="w-[62px] shrink-0 text-[11px] text-[var(--label-2)]">Primary</span>
+						<span className="w-[62px] shrink-0 text-[12px] text-[var(--label-2)]">Primary</span>
 						<div className="flex flex-1 flex-wrap items-center gap-[5px]">
 							{PRIMARY_PRESETS.map((c) => (
 								<button
@@ -352,16 +352,16 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 			)}
 
 			<Section title="Export">
-				<p className="-mt-0.5 text-[11px] text-[var(--label-3)]">{isScreenNode ? 'This screen' : `This ${KIND_LABELS[kind].toLowerCase()} and its layers`}</p>
+				<p className="-mt-0.5 text-[12px] text-[var(--label-3)]">{isScreenNode ? 'This screen' : `This ${KIND_LABELS[kind].toLowerCase()} and its layers`}</p>
 				<Row>
 					<button
-						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--accent)] text-[12px] font-semibold text-[var(--on-accent)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98]"
+						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--accent)] pointer-coarse:h-11 text-[12px] font-semibold text-[var(--on-accent)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98]"
 						onClick={() => onOpenCode(shape.id)}
 					>
 						<CodeIcon className="h-3.5 w-3.5" /> Copy code
 					</button>
 					<button
-						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--fill)] text-[12px] font-medium text-[var(--label)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-2)] active:scale-[0.98] disabled:opacity-50"
+						className="flex h-8 items-center justify-center gap-1.5 rounded-[8px] bg-[var(--fill)] pointer-coarse:h-11 text-[12px] font-medium text-[var(--label)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill-2)] active:scale-[0.98] disabled:opacity-50"
 						disabled={exporting}
 						onClick={async () => {
 							setExporting(true)
@@ -376,7 +376,7 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 					</button>
 				</Row>
 				{!isScreenNode && screen && (
-					<button className="text-[11px] font-medium text-[#0D99FF] hover:underline" onClick={() => onOpenCode(screen.id)}>
+					<button className="-mx-1.5 h-8 rounded-[6px] px-1.5 text-[12px] font-medium text-[var(--link)] hover:underline active:bg-[var(--press)] pointer-coarse:h-11" onClick={() => onOpenCode(screen.id)}>
 						Code for the whole screen
 					</button>
 				)}
@@ -388,7 +388,7 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 function Field({ label, children }: { label: string; children: ReactNode }) {
 	return (
 		<div className="flex items-center gap-2">
-			<span className="w-[62px] shrink-0 text-[11px] text-[var(--label-2)]">{label}</span>
+			<span className="w-[62px] shrink-0 text-[12px] text-[var(--label-2)]">{label}</span>
 			<div className="min-w-0 flex-1">{children}</div>
 		</div>
 	)

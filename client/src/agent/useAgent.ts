@@ -26,8 +26,13 @@ export type AgentState = {
 let logSeq = 0
 const AGENT_CURSOR_IDLE_MS = 3000
 
+type AgentHooks = {
+	/** After the agent's focus_view ran in this tab: the shell refits for what is visible here (dock, phone sheet). */
+	onFocus?: (shapeIds: string[], zoomLevel?: number) => void
+}
+
 /** Connects this tab to the room's agent and runs the tool calls it sends here. */
-export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
+export function useAgent(roomId: string, me: Identity, editor: Editor | null, hooks: AgentHooks = {}) {
 	const [state, setState] = useState<AgentState>({
 		connected: false,
 		mode: 'on_request',
@@ -46,6 +51,13 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 	const wsRef = useRef<WebSocket | null>(null)
 	const editorRef = useRef(editor)
 	editorRef.current = editor
+	const hooksRef = useRef(hooks)
+	hooksRef.current = hooks
+	const focused = (args: Record<string, unknown>) => {
+		const ids = Array.isArray(args.shapeIds) ? (args.shapeIds as string[]) : []
+		const zoom = Number(args.zoomLevel)
+		if (ids.length) hooksRef.current.onFocus?.(ids, zoom > 0 ? zoom : undefined)
+	}
 
 	const send = useCallback((msg: ClientMessage) => {
 		const ws = wsRef.current
@@ -114,9 +126,11 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 				case 'stop_speech':
 					stopSpeaking()
 					break
-				case 'focus':
-					void executor.run('focus_view', { shapeIds: msg.shapeIds, zoomLevel: msg.zoomLevel })
+				case 'focus': {
+					const args = { shapeIds: msg.shapeIds, zoomLevel: msg.zoomLevel }
+					if ((await executor.run('focus_view', args)).ok) focused(args)
 					break
+				}
 				case 'tool_call': {
 					if (msg.confirm && !(await confirm(msg.confirm.message))) {
 						send({ type: 'tool_result', callId: msg.callId, result: { ok: false, error: 'The user declined this change. Leave their nodes as they are, or ask first.' } })
@@ -124,6 +138,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					}
 					const result = await executor.run(msg.name, msg.args)
 					send({ type: 'tool_result', callId: msg.callId, result })
+					if (msg.name === 'focus_view' && result.ok) focused(msg.args as Record<string, unknown>)
 					break
 				}
 			}

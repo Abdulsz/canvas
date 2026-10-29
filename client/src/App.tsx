@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { Board } from './Board.tsx'
 import { AGENT_NAME } from '../../shared/protocol.ts'
 import { Orb } from './components/AgentPanel.tsx'
-import { getRoomId, loadIdentity, saveIdentity, type Identity } from './identity.ts'
+import { getRoomId, loadIdentity, saveIdentity, suggestName, type Identity } from './identity.ts'
 
 const roomId = getRoomId()
 
 export function App() {
 	const [me, setMe] = useState<Identity | null>(() => loadIdentity())
-	const [name, setName] = useState(me?.name ?? '')
+	const [name, setName] = useState(() => me?.name ?? suggestName())
 
 	if (!me) {
 		return (
@@ -32,21 +32,27 @@ export function App() {
 					<p className="mx-auto mt-2 max-w-[280px] text-[14px] leading-snug text-[var(--label-2)]">
 						Describe screens and {AGENT_NAME} builds them with you, live, on a shared canvas.
 					</p>
+					<label htmlFor="display-name" className="mt-7 block text-left text-[13px] font-medium text-[var(--label-2)]">
+						Your name <span className="font-normal">· shown to collaborators</span>
+					</label>
 					<input
+						id="display-name"
 						autoFocus
-						className="mt-7 h-12 w-full rounded-[14px] bg-[var(--card)] px-4 text-[16px] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)] outline-none focus-visible:outline-none transition-shadow duration-150 placeholder:text-[var(--label-3)] focus:shadow-[0_0_0_2px_var(--focus)]"
+						onFocus={(e) => e.target.select()}
+						maxLength={40}
+						className="mt-1.5 h-12 w-full rounded-[14px] bg-[var(--card)] px-4 text-[16px] text-[var(--label)] shadow-[0_0_0_0.5px_var(--separator)] outline-none focus-visible:outline-none transition-shadow duration-150 placeholder:text-[var(--label-3)] focus:shadow-[0_0_0_2px_var(--focus)]"
 						placeholder="Your name"
 						value={name}
 						onChange={(e) => setName(e.target.value)}
-						aria-label="Your name"
-						autoComplete="given-name"
+						autoComplete="nickname"
+						spellCheck={false}
 					/>
 					<button
-						className="mt-3 h-12 w-full rounded-[14px] bg-[var(--accent)] text-[15px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
+						className="mt-3 h-12 w-full truncate rounded-[14px] px-4 bg-[var(--accent)] text-[15px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
 						type="submit"
 						disabled={!name.trim()}
 					>
-						Join
+						{name.trim() ? `Join as ${name.trim()}` : 'Join'}
 					</button>
 					<p className="mt-5 text-[12px] text-[var(--label-3)]">
 						Room <span className="font-mono tracking-normal">{roomId}</span>

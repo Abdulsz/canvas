@@ -90,9 +90,11 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 	layers.other.forEach((l) => rows.push({ layer: l, depth: 0, parent: null, open: false }))
 	const tabStop = rows.some((r) => r.layer.id === focusId) ? focusId : (rows.find((r) => selected.has(r.layer.id)) ?? rows[0])?.layer.id
 
-	const focusRow = (id: TLShapeId | null | undefined) => {
+	// Arrow keys move focus and the selection with it (single-select tree), like Figma's layer list.
+	const focusRow = (id: TLShapeId | null | undefined, follow = true) => {
 		if (!id) return
 		setFocusId(id)
+		if (follow && editor && !editor.getSelectedShapeIds().includes(id)) select(id)
 		requestAnimationFrame(() => (listRef.current?.querySelector(`[data-layer-id="${CSS.escape(id)}"]`) as HTMLElement | null)?.focus())
 	}
 	const select = (id: TLShapeId) => editor && selectAndReveal(editor, id)
@@ -131,6 +133,10 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				handled()
 				if (row.open) setOpen(layer.id, false)
 				else focusRow(row.parent)
+				break
+			case 'Escape':
+				handled()
+				editor?.selectNone()
 				break
 			case 'Enter':
 			case ' ':
@@ -183,20 +189,19 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				}}
 				onDoubleClick={() => layer.isUi && setRenaming(layer.id)}
 			>
-				<button
-					type="button"
-					tabIndex={-1}
+				{/* Disclosure caret: pointer shortcut only (keyboard uses Right/Left on the row, which carries aria-expanded). */}
+				<span
 					aria-hidden
-					className={`flex h-5 w-5 shrink-0 items-center justify-center rounded text-[var(--label-3)] hover:text-[var(--label)] max-md:h-7 max-md:w-7 ${layer.children.length ? '' : 'invisible'}`}
+					className={`flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] active:bg-[var(--press)] max-md:h-9 max-md:w-9 ${layer.children.length ? '' : 'invisible'}`}
 					onClick={(e) => {
 						e.stopPropagation()
 						setOpen(layer.id, !row.open)
 					}}
 				>
 					<CaretIcon className={`h-3 w-3 transition-transform duration-150 ${row.open ? 'rotate-90' : ''}`} />
-				</button>
+				</span>
 				<span
-					className={`flex h-4 w-4 shrink-0 items-center justify-center ${isSel ? 'text-[#0D99FF]' : isScreenRow ? 'text-[var(--label)]' : layer.helper ? 'text-[var(--label-3)] opacity-70' : 'text-[var(--label-2)]'}`}
+					className={`flex h-4 w-4 shrink-0 items-center justify-center ${isSel ? 'text-[var(--link)]' : isScreenRow ? 'text-[var(--label)]' : layer.helper ? 'text-[var(--label-3)] opacity-70' : 'text-[var(--label-2)]'}`}
 				>
 					<KindIcon kind={layer.kind} />
 				</span>
@@ -233,7 +238,7 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 					</span>
 				)}
 				{!row.open && layer.children.length > 0 && !isScreenRow && (
-					<span className="shrink-0 text-[11px] tabular-nums text-[var(--label-3)] opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden>
+					<span className="shrink-0 text-[12px] tabular-nums text-[var(--label-3)] opacity-0 transition-opacity duration-150 group-hover:opacity-100" aria-hidden>
 						{layer.children.length}
 					</span>
 				)}
@@ -253,14 +258,14 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				<h2 className="text-[13px] font-semibold md:text-[12px]">Layers</h2>
 				<div className="flex items-center gap-1">
 					{screenCount > 0 && (
-						<span className="text-[11px] tabular-nums text-[var(--label-3)]">
+						<span className="text-[12px] tabular-nums text-[var(--label-3)]">
 							{screenCount} {screenCount === 1 ? 'screen' : 'screens'}
 						</span>
 					)}
 					{anyOpen && (
 						<button
 							type="button"
-							className="tap ml-1 h-6 rounded-[6px] px-1.5 text-[11px] font-medium text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)]"
+							className="tap ml-1 h-8 rounded-[7px] px-2 text-[12px] font-medium max-md:h-11 max-md:px-3 text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)]"
 							onClick={() => setOpenState(new Map(rows.filter((r) => r.depth > 0 && r.open).map((r) => [r.layer.id, false])))}
 							title="Collapse all groups"
 						>
@@ -268,7 +273,7 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 						</button>
 					)}
 					{onClose && (
-						<button className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)]" onClick={onClose} aria-label="Close layers">
+						<button className="tap flex h-11 w-11 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] active:bg-[var(--press)]" onClick={onClose} aria-label="Close layers">
 							<CloseIcon className="h-3.5 w-3.5" />
 						</button>
 					)}
@@ -287,7 +292,7 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				{rows.map((r, i) =>
 					layers.other.length > 0 && r.layer === layers.other[0] ? (
 						<div key={`annotations-${r.layer.id}`} role="none">
-							<div className="mt-2 px-2 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]" role="none">
+							<div className="mt-2 px-2 pb-1 pt-1.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]" role="none">
 								Annotations
 							</div>
 							{renderRow(r, i)}

@@ -9,7 +9,7 @@ export function Section({ title, children, action }: { title: string; children: 
 	return (
 		<section className="hairline-b px-3.5 pb-3.5 pt-3">
 			<div className="mb-2 flex h-5 items-center justify-between">
-				<h3 className="text-[11px] font-semibold text-[var(--label)]">{title}</h3>
+				<h3 className="text-[12px] font-semibold text-[var(--label)]">{title}</h3>
 				{action}
 			</div>
 			<div className="space-y-2">{children}</div>
@@ -22,7 +22,7 @@ export function Row({ children, cols = 2 }: { children: ReactNode; cols?: number
 }
 
 const fieldBox =
-	'flex h-7 min-w-0 items-center gap-1.5 rounded-[6px] bg-[var(--fill-2)] px-2 text-[12px] text-[var(--label)] shadow-[inset_0_0_0_1px_transparent] transition-[color,background-color,box-shadow,transform] duration-150 focus-within:bg-[var(--card)] focus-within:shadow-[inset_0_0_0_1px_#0D99FF] hover:shadow-[inset_0_0_0_1px_var(--separator)]'
+	'flex h-7 min-w-0 items-center gap-1.5 rounded-[6px] pointer-coarse:h-11 pointer-coarse:text-[14px] bg-[var(--fill-2)] px-2 text-[12px] text-[var(--label)] shadow-[inset_0_0_0_1px_transparent] transition-[color,background-color,box-shadow,transform] duration-150 focus-within:bg-[var(--card)] focus-within:shadow-[inset_0_0_0_1px_#0D99FF] hover:shadow-[inset_0_0_0_1px_var(--separator)]'
 
 /** Number input that commits on Enter / blur, with arrow-key nudging (Shift = 10). */
 export function NumberField({
@@ -57,9 +57,9 @@ export function NumberField({
 	}
 	return (
 		<label className={`${fieldBox} ${disabled ? 'opacity-50' : ''}`} title={title}>
-			<span className="w-3.5 shrink-0 text-center text-[11px] text-[var(--label-3)]">{label}</span>
+			<span className="w-3.5 shrink-0 text-center text-[12px] text-[var(--label-3)]">{label}</span>
 			<input
-				className="min-w-0 flex-1 bg-transparent tabular-nums outline-none focus-visible:outline-none"
+				className="h-full min-w-0 flex-1 bg-transparent tabular-nums outline-none focus-visible:outline-none"
 				inputMode="decimal"
 				value={shown}
 				disabled={disabled}
@@ -80,7 +80,7 @@ export function NumberField({
 					}
 				}}
 			/>
-			{suffix && <span className="shrink-0 text-[11px] text-[var(--label-3)]">{suffix}</span>}
+			{suffix && <span className="shrink-0 text-[12px] text-[var(--label-3)]">{suffix}</span>}
 		</label>
 	)
 }
@@ -112,7 +112,7 @@ export function TextField({ value, onCommit, placeholder, multiline, label }: { 
 		<label className={fieldBox}>
 			<input
 				aria-label={label}
-				className="min-w-0 flex-1 bg-transparent outline-none focus-visible:outline-none"
+				className="h-full min-w-0 flex-1 bg-transparent outline-none focus-visible:outline-none"
 				value={shown}
 				placeholder={placeholder}
 				onChange={(e) => setDraft(e.target.value)}
@@ -144,9 +144,9 @@ export function Select<V extends string | number>({
 }) {
 	return (
 		<label className={`${fieldBox} relative pr-1 ${className}`}>
-			{label && <span className="shrink-0 text-[11px] text-[var(--label-3)]">{label}</span>}
+			{label && <span className="shrink-0 text-[12px] text-[var(--label-3)]">{label}</span>}
 			<select
-				className="min-w-0 flex-1 cursor-pointer appearance-none bg-transparent pr-4 outline-none focus-visible:outline-none"
+				className="h-full min-w-0 flex-1 cursor-pointer appearance-none bg-transparent pr-4 outline-none focus-visible:outline-none"
 				value={String(value)}
 				onChange={(e) => {
 					const opt = options.find((o) => String(o.value) === e.target.value)
@@ -178,7 +178,7 @@ export function Segmented<V extends string>({
 	label?: string
 }) {
 	return (
-		<div className="grid h-7 rounded-[6px] bg-[var(--fill-2)] p-[2px]" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label={label}>
+		<div className="grid h-7 rounded-[6px] bg-[var(--fill-2)] p-[2px] pointer-coarse:h-11" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }} role="radiogroup" aria-label={label}>
 			{options.map((o) => {
 				const on = o.value === value
 				return (
@@ -189,7 +189,7 @@ export function Segmented<V extends string>({
 						aria-checked={on}
 						title={o.title}
 						onClick={() => onChange(o.value)}
-						className={`flex min-w-0 items-center justify-center truncate rounded-[4.5px] px-1 text-[11px] transition-[color,background-color,box-shadow,transform] duration-150 ${
+						className={`flex min-w-0 items-center justify-center truncate rounded-[4.5px] px-1 text-[12px] transition-[color,background-color,box-shadow,transform] duration-150 ${
 							on ? 'bg-[var(--card)] font-semibold text-[var(--label)] shadow-[var(--shadow-control)]' : 'text-[var(--label-2)] hover:text-[var(--label)]'
 						}`}
 					>
@@ -250,16 +250,16 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 	return (
 		<div className="space-y-1.5" data-testid={`color-${label.toLowerCase().replace(/\s+/g, '-')}`}>
 			<div className="flex items-center gap-2">
-				<span className="w-[62px] shrink-0 text-[11px] text-[var(--label-2)]">{label}</span>
+				<span className="w-[62px] shrink-0 text-[12px] text-[var(--label-2)]">{label}</span>
 				<div className={`${fieldBox} flex-1`}>
-					<button type="button" className="shrink-0 rounded-[4px]" onClick={() => pickerRef.current?.click()} title="Pick a color" aria-label={`Pick ${label.toLowerCase()}`}>
+					<button type="button" className="-ml-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-[5px] hover:bg-[var(--fill)] pointer-coarse:h-11 pointer-coarse:w-11" onClick={() => pickerRef.current?.click()} title="Pick a color" aria-label={`Pick ${label.toLowerCase()}`}>
 						<Swatch color={resolved} size={15} />
 					</button>
 					<input ref={pickerRef} type="color" className="sr-only" tabIndex={-1} aria-label={`${label} picker`} value={toHex(resolved)} onChange={(e) => pick(e.target.value)} />
 					<ColorText value={value} onCommit={onCommit} label={label} />
 				</div>
 			</div>
-			<div className="flex flex-wrap items-center gap-[2px] pl-[68px]">
+			<div className="flex flex-wrap items-center gap-[2px] pl-[66px]">
 				{TOKENS.map((t) => {
 					const on = value === `$${t}`
 					return (
@@ -269,9 +269,9 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 							title={`$${t}`}
 							aria-label={`${label}: ${t} token`}
 							onClick={() => onCommit(`$${t}`)}
-							className={`rounded-full p-[1.5px] transition-[color,background-color,box-shadow,transform] duration-150 ${on ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
+							className={`rounded-full p-[5px] pointer-coarse:p-[8px] transition-[color,background-color,box-shadow,transform] duration-150 ${on ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 						>
-							<span className="block h-[13px] w-[13px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: resolveColor(`$${t}`, theme) }} />
+							<span className="block h-[14px] w-[14px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: resolveColor(`$${t}`, theme) }} />
 						</button>
 					)
 				})}
@@ -281,9 +281,9 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 						title="None"
 						aria-label={`${label}: none`}
 						onClick={() => onCommit('transparent')}
-						className={`rounded-full p-[1.5px] transition-[color,background-color,box-shadow,transform] duration-150 ${value === 'transparent' ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
+						className={`rounded-full p-[5px] pointer-coarse:p-[8px] transition-[color,background-color,box-shadow,transform] duration-150 ${value === 'transparent' ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 					>
-						<span className="relative block h-[13px] w-[13px] overflow-hidden rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]">
+						<span className="relative block h-[14px] w-[14px] overflow-hidden rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]">
 							<span className="absolute left-1/2 top-[-2px] h-[18px] w-px -translate-x-1/2 rotate-45 bg-[var(--red)]" />
 						</span>
 					</button>
@@ -307,7 +307,7 @@ function ColorText({ value, onCommit, label }: { value: string; onCommit: (v: st
 	return (
 		<input
 			aria-label={`${label} value`}
-			className="min-w-0 flex-1 bg-transparent font-mono text-[11px] uppercase outline-none focus-visible:outline-none [&:not(:focus)]:normal-case"
+			className="h-full min-w-0 flex-1 bg-transparent font-mono text-[12px] uppercase outline-none focus-visible:outline-none [&:not(:focus)]:normal-case"
 			value={draft ?? (value === 'transparent' ? 'None' : value.startsWith('$') ? value : value.toUpperCase())}
 			onChange={(e) => setDraft(e.target.value)}
 			onFocus={(e) => e.target.select()}
@@ -350,13 +350,13 @@ export function MenuItem({ icon, label, hint, onClick, disabled }: { icon?: Reac
 			role="menuitem"
 			disabled={disabled}
 			onClick={onClick}
-			className="flex h-8 w-full items-center gap-2.5 rounded-[7px] px-2 text-left text-[13px] pointer-coarse:h-11 text-[var(--label)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill)] disabled:opacity-40 disabled:hover:bg-transparent"
+			className="flex h-9 w-full items-center gap-2.5 rounded-[8px] px-2.5 text-left text-[13px] pointer-coarse:h-11 text-[var(--label)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill)] active:bg-[var(--press)] disabled:opacity-40 disabled:hover:bg-transparent"
 		>
 			{icon && <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--label-2)]">{icon}</span>}
 			<span className="flex-1 truncate">{label}</span>
-			{hint && <span className="shrink-0 text-[11px] tabular-nums text-[var(--label-3)]">{hint}</span>}
+			{hint && <span className="shrink-0 text-[12px] tabular-nums text-[var(--label-2)]">{hint}</span>}
 		</button>
 	)
 }
 
-export const menuPanel = 'material pop absolute z-[600] mt-1.5 rounded-[12px] p-1.5 shadow-[var(--shadow-panel)]'
+export const menuPanel = 'menu-surface pop absolute z-[600] mt-2 rounded-[14px] p-2'

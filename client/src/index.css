@@ -19,8 +19,8 @@
 
 	--bg: #f2f2f4;
 	--label: #1d1d1f;
-	--label-2: rgba(60, 60, 67, 0.82);
-	--label-3: rgba(60, 60, 67, 0.74);
+	--label-2: rgba(60, 60, 67, 0.88);
+	--label-3: rgba(60, 60, 67, 0.8);
 	--separator: rgba(60, 60, 67, 0.14);
 	--focus: #0d99ff;
 	--canvas: #ebebed;
@@ -44,6 +44,13 @@
 	--shadow-panel: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 2px 6px rgba(0, 0, 0, 0.04), 0 18px 48px rgba(0, 0, 0, 0.1);
 	--shadow-control: 0 0 0 0.5px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.08), 0 3px 8px rgba(0, 0, 0, 0.06);
 	--orb: conic-gradient(from 210deg, #5e5ce6, #bf5af2, #ff375f, #ff9f0a, #64d2ff, #5e5ce6);
+	/* Amber "Demo" badge: text keeps >= 4.5:1 on its tint. */
+	--demo-fg: #8a5a00;
+	--demo-bg: #fff1d6;
+	/* Popovers are opaque: canvas content must never bleed through menus. */
+	--menu: #ffffff;
+	/* Text links on light surfaces (selection blue is only 2.9:1 as text). */
+	--link: #0a68b5;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -52,8 +59,8 @@
 		--fill-strong: rgba(118, 118, 128, 0.36);
 		--agent-glow: rgba(140, 116, 255, 0.34);
 		--label: #f5f5f7;
-		--label-2: rgba(235, 235, 245, 0.78);
-		--label-3: rgba(235, 235, 245, 0.6);
+		--label-2: rgba(235, 235, 245, 0.82);
+		--label-3: rgba(235, 235, 245, 0.7);
 		--focus: #4cc2ff;
 		--canvas: #111113;
 		--dock: rgba(34, 34, 37, 0.94);
@@ -76,6 +83,10 @@
 		--bubble-me: #f5f5f7;
 		--shadow-panel: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 18px 48px rgba(0, 0, 0, 0.5);
 		--shadow-control: 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 1px 3px rgba(0, 0, 0, 0.4);
+		--demo-fg: #ffcf70;
+		--demo-bg: rgba(255, 159, 10, 0.16);
+		--menu: #232326;
+		--link: #4cc2ff;
 	}
 }
 
@@ -373,6 +384,25 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+	/* Ambient motion (orb, dock ring, meters, shimmer, popover pops) stops outright. */
+	.orb,
+	.orb[data-state],
+	.voice-dock::before,
+	.voice-bar,
+	.shimmer-text,
+	.pop,
+	.fade-up,
+	.fade-in,
+	.slide-in {
+		animation: none !important;
+	}
+	.shimmer-text {
+		color: var(--label) !important;
+		background: none;
+	}
+	button:active {
+		transform: none !important;
+	}
 	*,
 	*::before,
 	*::after {
@@ -457,4 +487,32 @@ button:disabled {
 	border-radius: 999px;
 	background: var(--fill-strong);
 	margin: 0 auto;
+}
+
+/* Opaque menus (Insert, Export): solid surface, hairline ring, deep shadow. */
+.menu-surface {
+	background: var(--menu);
+	box-shadow:
+		0 0 0 0.5px var(--separator),
+		var(--shadow-panel);
+}
+
+/*
+ * tldraw's license watermark stays exactly as tldraw renders it (visible,
+ * unobscured, clickable); it only gains a visible keyboard focus ring, since
+ * its button otherwise focuses with no indicator.
+ */
+.tl-watermark_SEE-LICENSE > button:focus-visible {
+	outline: 2px solid var(--focus) !important;
+	outline-offset: 2px;
+	opacity: 1 !important;
+}
+
+/* Press feedback for tldraw's toolbar and menus, matching the shell's buttons. */
+.tl-container .tlui-button:not(:disabled):active {
+	transform: scale(0.94);
+	transition: transform 60ms var(--ease-out);
+}
+.tl-container .tlui-button {
+	transition: transform 150ms var(--ease-out);
 }
