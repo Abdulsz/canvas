@@ -19,7 +19,7 @@ const region = {
 
 const colorValue = (what: string) => ({
 	type: 'string',
-	description: `${what}. Prefer theme tokens so light/dark mode works: $bg $surface $surfaceAlt $primary $primarySoft $onPrimary $text $muted $border $success $successSoft $warning $warningSoft $danger $dangerSoft. Also accepts '#rrggbb' or 'transparent'.`,
+	description: `${what}. Prefer theme tokens so light/dark mode works: $bg $surface $surfaceAlt $primary $primarySoft $onPrimary $text $muted $border $success $successSoft $warning $warningSoft $danger $dangerSoft $info $infoSoft. Also accepts '#rrggbb' or 'transparent'.`,
 })
 const sizeValue = (axis: string) => ({
 	description: `${axis}: a number of px (fixed), 'fill' (take the remaining space in the parent) or 'hug' (shrink to content). Defaults depend on type.`,
@@ -309,7 +309,7 @@ export const FEEDBACK_TOOLS: ToolDef[] = [
 	},
 	{
 		name: 'add_comment',
-		description: 'Pins a design-review comment (sticky note with a leader line) next to a node or screen.',
+		description: 'Pins a design-review comment (a small card beside the screen, with a leader line to the node) next to a node or screen.',
 		parameters: {
 			type: 'object',
 			properties: {

@@ -37,7 +37,7 @@ await page.evaluate(() => {
 	window.__editor.store.listen(
 		({ changes }) => {
 			const touched = [...Object.values(changes.added), ...Object.values(changes.updated).map(([, to]) => to)]
-			if (touched.some((r) => r.typeName === 'shape' && (r.type === 'ui' || r.type === 'arrow' || r.type === 'note'))) window.__changes.push(Date.now())
+			if (touched.some((r) => r.typeName === 'shape' && (r.type === 'ui' || r.type === 'arrow' || r.type === 'critique'))) window.__changes.push(Date.now())
 		},
 		{ source: 'all', scope: 'document' }
 	)
@@ -118,12 +118,12 @@ const inspect = () =>
 			.filter((s) => s.type === 'arrow' && s.meta?.role !== 'annotation')
 			.map((s) => Object.fromEntries(e.getBindingsFromShape(s, 'arrow').map((b) => [b.props.terminal, b.toId.slice(6)])))
 		return {
-			screens: screens.map((s) => ({ id: s.id.slice(6), name: s.props.name, theme: s.meta?.theme, nodes: e.getShapeAndDescendantIds([s.id]).size - 1 })),
+			screens: screens.map((s) => ({ id: s.id.slice(6), name: s.props.name, theme: s.meta?.theme, w: s.props.w, h: Math.round(s.props.h), nodes: e.getShapeAndDescendantIds([s.id]).size - 1 })),
 			buttons,
 			toggles: nodes.filter((n) => n.props.kind === 'toggle' || (n.props.kind === 'checkbox' && /remember/i.test(n.props.text))).map((n) => n.id.slice(6)),
 			texts: nodes.filter((n) => n.props.kind === 'text').map((n) => n.props.text),
 			arrows,
-			comments: shapes.filter((s) => s.type === 'note' && s.meta?.role === 'comment').length,
+			comments: shapes.filter((s) => s.type === 'critique' && s.meta?.role === 'comment').length,
 			highlights: shapes.filter((s) => s.meta?.role === 'annotation' && s.meta?.targets?.length).length,
 			problems: [...new Set(problems)].slice(0, 12),
 			// Hard-coded colors don't follow the theme (dark mode); tokens do.
@@ -190,6 +190,7 @@ check(!!menu && menu.nodes >= 8, `menu has a drinks list (${menu?.nodes} nodes)`
 check(menu?.theme?.mode === 'dark', 'menu screen is dark too')
 check(s.arrows.some((a) => a.end === menu?.id), `flow arrow into the menu (${JSON.stringify(s.arrows)})`)
 check(!s.problems.length, `layout clean ${s.problems.join('; ')}`)
+check(s.screens.filter((x) => x.w === 390).every((x) => x.h <= 844), `phone screens fit 844 (${s.screens.map((x) => `${x.name} ${x.w}x${x.h}`).join(', ')})`)
 await shot('5-menu')
 
 // ---------------------------------------------------------------- 6: critique

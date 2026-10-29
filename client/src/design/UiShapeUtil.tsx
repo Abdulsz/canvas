@@ -18,6 +18,7 @@ import {
 	contrast,
 	DEFAULT_THEME,
 	FILLED_ICONS,
+	foldHeight,
 	ICON_PATHS,
 	iconPaths,
 	initials,
@@ -123,6 +124,39 @@ function ScreenChrome({ shape, theme }: { shape: UiShape; theme: ThemeSpec }) {
 			{meta.tabs && <Svg markup={tabBarSvg(p.w, meta.tabs, theme)} style={{ position: 'absolute', left: 0, bottom: 0, width: p.w, height: TAB_BAR_H }} />}
 			{phone && <Svg markup={homeIndicatorSvg(p.w, ink)} style={{ position: 'absolute', left: 0, bottom: 0, width: p.w, height: 21 }} />}
 		</>
+	)
+}
+
+/**
+ * A screen taller than its device (a phone that scrolls) shows where the fold is:
+ * a dashed line across it at the device height, tagged outside its right edge.
+ */
+function FoldMarker({ shape }: { shape: UiShape }) {
+	const editor = useEditor()
+	const zoom = useValue('zoom', () => editor.getZoomLevel(), [editor])
+	const fold = foldHeight({ w: shape.props.w, layoutMode: (shape.meta?.layout as { mode?: string } | undefined)?.mode, name: shape.props.name })
+	if (!fold || shape.props.h <= fold + 1 || shape.meta?.skeleton) return null
+	const line = Math.max(1, 1.25 / zoom)
+	return (
+		<div style={{ position: 'absolute', left: 0, top: fold, width: shape.props.w, height: 0, borderTop: `${line}px dashed #e5484d`, pointerEvents: 'none' }}>
+			<div
+				style={{
+					position: 'absolute',
+					left: '100%',
+					top: 0,
+					transformOrigin: 'top left',
+					transform: `translate(${6 / zoom}px, -50%) scale(${1 / zoom})`,
+					font: `600 11px ${FONT}`,
+					color: '#fff',
+					background: '#e5484d',
+					borderRadius: 4,
+					padding: '2px 6px',
+					whiteSpace: 'nowrap',
+				}}
+			>
+				Fold · {fold}px
+			</div>
+		</div>
 	)
 }
 
@@ -381,6 +415,7 @@ function UiView({ shape }: { shape: UiShape }) {
 		<HTMLContainer style={{ overflow: 'visible' }}>
 			<div style={style}>{content}</div>
 			{p.kind === 'screen' && <ScreenLabel shape={shape} />}
+			{p.kind === 'screen' && <FoldMarker shape={shape} />}
 		</HTMLContainer>
 	)
 }

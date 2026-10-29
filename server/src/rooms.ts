@@ -4,11 +4,12 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { uiShapeProps } from '../../shared/design.ts'
+import { critiqueShapeProps } from '../../shared/critique.ts'
 import type { Author } from '../../shared/protocol.ts'
 import { summarizeShape, type ShapeRecord, type ShapeSummary } from './shapes.ts'
 
-// The design tool's single custom shape ('ui'); props must match client/src/design/UiShapeUtil.tsx.
-const schema = createTLSchema({ shapes: { ...defaultShapeSchemas, ui: { props: uiShapeProps } } })
+// The design tool's custom shapes: 'ui' (props must match client/src/design/UiShapeUtil.tsx) and 'critique' (comment cards and outlines, CritiqueShapeUtil.tsx).
+const schema = createTLSchema({ shapes: { ...defaultShapeSchemas, ui: { props: uiShapeProps }, critique: { props: critiqueShapeProps } } })
 
 export type ChangeEntry = {
 	op: 'created' | 'updated' | 'deleted'

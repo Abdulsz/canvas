@@ -160,7 +160,7 @@ test('mock recolors the primary button with update_node', async () => {
 	const bob = await say('make the button green', [loginTree])
 	const names = bob.toolCalls().map((c) => c.name)
 	assert.deepEqual(names, ['get_canvas_state', 'update_node'])
-	assert.deepEqual(bob.toolCalls()[1].args, { id: 'login_primary_btn', fill: '#16a34a' })
+	assert.deepEqual(bob.toolCalls()[1].args, { id: 'login_primary_btn', fill: '#15803d' })
 })
 
 test('mock edits text, adds components, deletes, and connects a new screen', async () => {
@@ -295,4 +295,24 @@ test('a step that asks its question and runs cleanly ends the turn; warnings get
 		await bob.waitIdle()
 		assert.equal(calls.length, warn ? 2 : 1, warn ? 'warnings need a fix step' : 'no extra round trip')
 	}
+})
+
+test('steering questions: copy tweaks and already-true asks are swapped for the next product step', async () => {
+	const { questionProblem, nextStepQuestion } = await import('../src/agent.ts')
+	const facts = {
+		screens: [
+			{ id: 'onboarding', name: 'Onboarding', x: 0, mode: 'dark' as const, primary: '#15803d' },
+			{ id: 'settings', name: 'Settings', x: 500, mode: 'dark' as const, primary: '#15803d' },
+			{ id: 'dashboard', name: 'Dashboard', x: 1000, mode: 'dark' as const, primary: '#15803d' },
+		],
+	}
+	assert.ok(questionProblem('Want the headline to read “Breathe in” instead of “Find your calm”?', facts))
+	assert.ok(questionProblem('Want the daily reminder set for 7:00 AM under that toggle?', facts))
+	assert.ok(questionProblem('Want the cash-flow chart to show the last eight months, or switch it to twelve?', facts))
+	assert.ok(questionProblem('Want the status badges to use the new green accent for received items?', facts))
+	assert.ok(questionProblem('Want the sidebar nav items to stay highlighted in the new green?', facts))
+	assert.equal(questionProblem('Want an empty state for the transactions table?', facts), null)
+	const next = nextStepQuestion(facts, [])!
+	assert.match(next, /dashboard/i)
+	assert.notEqual(nextStepQuestion(facts, [next]), next)
 })

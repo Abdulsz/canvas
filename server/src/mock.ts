@@ -29,7 +29,7 @@ const row = (id: string, children: Spec[], extra: Spec = {}): Spec => frame(id, 
 const secondaryBtn = (id: string, text: string, extra: Spec = {}): Spec => ({ id, type: 'button', text, fill: '$surface', textColor: '$text', stroke: '$border', strokeWidth: 1, ...extra })
 
 const COLORS: Record<string, string> = {
-	green: '#16a34a',
+	green: '#15803d',
 	red: '#dc2626',
 	blue: '#2563eb',
 	purple: '#7c3aed',
@@ -78,7 +78,7 @@ function loginScreen(): Spec {
 		device: 'iphone',
 		layout: 'vertical',
 		gap: 24,
-		padding: [88, 24, 40, 24],
+		padding: [64, 24, 40, 24],
 		alignItems: 'stretch',
 		children: [
 			frame(
@@ -97,14 +97,15 @@ function loginScreen(): Spec {
 						], { width: 'fill', justify: 'space-between' }),
 					], { gap: 16 }),
 					{ id: 'login_primary_btn', type: 'button', text: 'Log in', width: 'fill', height: 52 },
+					// The footer ends the centered content (no dead gap above a bottom-anchored row).
+					row('login_footer', [muted('login_footer_text', "Don't have an account?"), txt('login_signup_link', 'Sign up', { textColor: '$primary', fontSize: 14, fontWeight: 600 })], {
+						width: 'fill',
+						justify: 'center',
+						gap: 4,
+					}),
 				],
-				{ width: 'fill', height: 'fill', gap: 32, alignItems: 'stretch' }
+				{ width: 'fill', height: 'fill', gap: 28, alignItems: 'stretch', justify: 'center' }
 			),
-			row('login_footer', [muted('login_footer_text', "Don't have an account?"), txt('login_signup_link', 'Sign up', { textColor: '$primary', fontSize: 14, fontWeight: 600 })], {
-				width: 'fill',
-				justify: 'center',
-				gap: 4,
-			}),
 		],
 	}
 }
@@ -357,7 +358,16 @@ function landingProductShot(): Spec {
 					{ icon: 'chart', label: 'Insights', color: '$muted' },
 				],
 			},
-		], { width: 200, height: 'fill', gap: 8, padding: [20, 12, 20, 12], fill: '$bg', radius: 14 }),
+			frame('landing_shot_spacer', [], { height: 'fill' }),
+			card('landing_shot_upgrade', [
+				txt('landing_shot_upgrade_title', 'Pro trial', { fontSize: 13, fontWeight: 600 }),
+				muted('landing_shot_upgrade_body', '9 days left', { fontSize: 12 }),
+			], { gap: 2, padding: 12, radius: 10 }),
+			row('landing_shot_me', [
+				{ id: 'landing_shot_me_avatar', type: 'avatar', text: 'Maya Chen', width: 28, height: 28, fontSize: 11 },
+				frame('landing_shot_me_info', [txt('landing_shot_me_name', 'Maya Chen', { fontSize: 13, fontWeight: 600 }), muted('landing_shot_me_role', 'Design lead', { fontSize: 12 })], { gap: 0, width: 'fill' }),
+			], { gap: 8, padding: [4, 4, 0, 4] }),
+		], { width: 200, height: 'fill', gap: 8, padding: [20, 12, 16, 12], fill: '$bg', radius: 14 }),
 		frame('landing_shot_main', [
 			{
 				id: 'landing_shot_stats',
@@ -418,7 +428,7 @@ const landingFeatures = (): Spec =>
 const landingTestimonial = (): Spec =>
 	frame('landing_quote_wrap', [
 		card('landing_quote', [
-			{ id: 'landing_quote_stars', type: 'frame', layout: 'horizontal', width: 'hug', gap: 4, template: { id: 'landing_star', type: 'icon', icon: 'star', width: 20, height: 20, textColor: '$warning' }, items: [{}, {}, {}, {}, {}] },
+			{ id: 'landing_quote_stars', type: 'frame', layout: 'horizontal', width: 'hug', gap: 4, template: { id: 'landing_star', type: 'icon', icon: 'star-filled', width: 20, height: 20, textColor: '#f5a524' }, items: [{}, {}, {}, {}, {}] },
 			txt('landing_quote_text', '"We went from a napkin sketch to a reviewed flow in one meeting. Acme is the first tool our PMs and engineers both open every day."', { fontSize: 24, fontWeight: 500, align: 'center', width: 'fill' }),
 			row('landing_quote_who', [
 				{ id: 'landing_quote_avatar', type: 'avatar', text: 'Priya Nair', width: 44, height: 44 },
@@ -870,7 +880,7 @@ export class MockProvider implements LLMProvider {
 		switch (kind) {
 			case 'login':
 				if (step === 0) return { text: 'Here is a clean mobile login with email, password and a clear main button.', toolCalls: [call('create_screen', loginScreen())] }
-				if (step === 1) return { text: 'I will add social sign-in options under the button.', toolCalls: [call('add_nodes', { parentId: 'login_content', nodes: loginSocial() }), call('focus_view', { shapeIds: ['login'], scope: 'requester' })] }
+				if (step === 1) return { text: 'I will add social sign-in options under the button.', toolCalls: [call('add_nodes', { parentId: 'login_content', index: 3, nodes: loginSocial() }), call('focus_view', { shapeIds: ['login'], scope: 'requester' })] }
 				return step === 2 ? { text: 'Want a sign-up screen connected to this one?', toolCalls: [] } : none
 			case 'signup':
 				if (step === 0) return { text: 'Here is a simple sign-up screen with the essentials only.', toolCalls: [call('create_screen', signupScreen()), call('focus_view', { shapeIds: ['signup'], scope: 'requester' })] }

@@ -228,7 +228,7 @@ export type Device = keyof typeof DEVICES
 export const DEFAULT_PRIMARY = '#5b5bd6'
 export const DEFAULT_THEME: ThemeSpec = { mode: 'light', primary: DEFAULT_PRIMARY }
 
-export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'primarySoft', 'onPrimary', 'text', 'muted', 'border', 'success', 'successSoft', 'warning', 'warningSoft', 'danger', 'dangerSoft'] as const
+export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'primarySoft', 'onPrimary', 'text', 'muted', 'border', 'success', 'successSoft', 'warning', 'warningSoft', 'danger', 'dangerSoft', 'info', 'infoSoft'] as const
 export type Token = (typeof TOKENS)[number]
 
 // Refined neutrals (a faint cool cast, never pure gray on gray). Light: an
@@ -252,6 +252,8 @@ export const THEMES: Record<ThemeMode, Record<Token, string>> = {
 		warningSoft: '#fef3c7',
 		danger: '#dc2626',
 		dangerSoft: '#fee2e2',
+		info: '#1d4ed8',
+		infoSoft: '#dbeafe',
 	},
 	dark: {
 		bg: '#0b0c0f',
@@ -269,6 +271,8 @@ export const THEMES: Record<ThemeMode, Record<Token, string>> = {
 		warningSoft: '#33270d',
 		danger: '#f87171',
 		dangerSoft: '#3a1717',
+		info: '#60a5fa',
+		infoSoft: '#172554',
 	},
 }
 
@@ -283,23 +287,43 @@ export function resolveColor(value: string | undefined, theme: Partial<ThemeSpec
 		if (key === 'primary') return primary
 		// A quiet tint of the brand for icon tiles, chips and avatars.
 		if (key === 'primarySoft') return parseHex(primary) ? mixHex(primary, THEMES[mode].surface, mode === 'dark' ? 0.74 : 0.88) : THEMES[mode].primarySoft
-		// Text on the brand color: white, or near-black when the brand is light (yellow, mint...).
-		if (key === 'onPrimary') return contrast(primary, '#ffffff') >= 3 ? THEMES[mode].onPrimary : '#111827'
+		// Text on the brand color: white when it reads (4.5:1), else near-black (yellow, mint...).
+		if (key === 'onPrimary') return onColor(primary, THEMES[mode].onPrimary)
 		return THEMES[mode][key as Token]
 	}
 	return v
 }
 
+/** White text on `bg` when it reaches 4.5:1, otherwise whichever of white / near-black reads better. */
+export function onColor(bg: string, white = '#ffffff'): string {
+	if (!parseHex(bg)) return white
+	const w = contrast(bg, '#ffffff')
+	return w >= 4.5 || w >= contrast(bg, '#111827') ? white : '#111827'
+}
+
 /**
  * The $primary color for a theme. In dark mode a dark brand color (coffee brown,
- * navy) is lightened until it stands out from the background, so buttons and
- * primary-colored links stay readable after "switch to dark mode".
+ * navy) is lightened until it stands out from the background (3:1), so buttons and
+ * primary-colored links stay visible after "switch to dark mode". A mid-tone brand
+ * (green #16a34a: white text only 3.3:1) is deepened just enough for white button
+ * labels to reach 4.5:1, in both modes, while staying 3:1 against a dark background.
  */
 export function themePrimary(theme: Partial<ThemeSpec>): string {
 	const primary = theme.primary || DEFAULT_PRIMARY
-	if (theme.mode !== 'dark' || !parseHex(primary)) return primary
+	if (!parseHex(primary)) return primary
+	const dark = theme.mode === 'dark'
 	let c = primary
-	for (let i = 1; i <= 10 && contrast(c, THEMES.dark.bg) < 3.5; i++) c = mixHex(primary, '#ffffff', i * 0.08)
+	if (dark) for (let i = 1; i <= 25 && contrast(c, THEMES.dark.bg) < 3; i++) c = mixHex(primary, '#ffffff', i * 0.03)
+	const white = contrast(c, '#ffffff')
+	// Light brands (yellow, mint) keep their color and get dark labels instead.
+	if (white >= 4.5 || white < 3) return c
+	const base = c
+	for (let i = 1; i <= 20; i++) {
+		const d = mixHex(base, '#000000', i * 0.02)
+		if (dark && contrast(d, THEMES.dark.bg) < 3) break
+		c = d
+		if (contrast(c, '#ffffff') >= 4.5) break
+	}
 	return c
 }
 
@@ -333,13 +357,18 @@ export function contrast(a: string, b: string): number {
 	return (l1 + 0.05) / (l2 + 0.05)
 }
 
-/** Nudges a #rrggbb foreground toward white or black until it reads on `bg` (>= min:1). */
+/** Nudges a #rrggbb foreground toward white or black until it reads on `bg` (>= min:1); the pole that gets there with the smaller change wins. */
 export function legibleOn(fg: string, bg: string, min = 4.5): string {
 	if (!parseHex(fg) || !parseHex(bg) || contrast(fg, bg) >= min) return fg
-	const toward = contrast('#ffffff', bg) > contrast('#000000', bg) ? '#ffffff' : '#000000'
-	let c = fg
-	for (let i = 1; i <= 10 && contrast(c, bg) < min; i++) c = mixHex(fg, toward, i * 0.1)
-	return c
+	let best = fg
+	for (let i = 1; i <= 20; i++) {
+		for (const pole of ['#ffffff', '#000000']) {
+			const c = mixHex(fg, pole, i * 0.05)
+			if (contrast(c, bg) >= min) return c
+			if (contrast(c, bg) > contrast(best, bg)) best = c
+		}
+	}
+	return best
 }
 
 /**
@@ -362,6 +391,7 @@ export const ICON_PATHS: Record<string, string> = {
 	bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
 	heart: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',
 	star: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
+	'star-filled': 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
 	plus: 'M12 5v14 M5 12h14',
 	minus: 'M5 12h14',
 	menu: 'M3 6h18 M3 12h18 M3 18h18',
@@ -988,7 +1018,7 @@ const cssColor = (v: string) => (v.startsWith('$') ? `var(--${v.slice(1)})` : v 
 const FLEX_ALIGN: Record<string, string> = { start: 'flex-start', center: 'center', end: 'flex-end', stretch: 'stretch', 'space-between': 'space-between' }
 
 /** Brand marks are filled shapes (Google in its four colors), not stroked glyphs. */
-export const FILLED_ICONS = new Set(['google', 'apple'])
+export const FILLED_ICONS = new Set(['google', 'apple', 'star-filled'])
 const GOOGLE_COLORS = ['#4285F4', '#34A853', '#FBBC05', '#EA4335']
 /** The <path> elements of an icon (24x24 box) in the given color. */
 export function iconPaths(name: string, color: string, strokeWidth = 2): string {
@@ -1121,7 +1151,14 @@ ${node(tree, null)}
 
 /** Categories of measurable problems the executor's audit reports (see CanvasExecutor._audit). */
 export type AuditKind = 'overflow' | 'clipped' | 'contrast' | 'touch' | 'small_text' | 'spacing'
-export type AuditIssue = { id: string; screen: string; kind: AuditKind; detail: string }
+export type AuditIssue = {
+	id: string
+	screen: string
+	kind: AuditKind
+	detail: string
+	/** The same finding as one plain sentence about what people see (no ids), usable as a critique note. */
+	say?: string
+}
 
 /**
  * Measurable claims a critique can make, by category. A sentence or comment that
@@ -1235,4 +1272,99 @@ export function skeletonSpec(kind: SkeletonKind, device: Device): UiNodeSpec {
 					? [bar('sk_t1', 160, 32), card('sk_prof', rows('sk_pr', 1)), bar('sk_h1', 90, 12), card('sk_s1', rows('sk_a', 3)), bar('sk_h2', 110, 12), card('sk_s2', rows('sk_b', 3))]
 					: [bar('sk_t1', 200, 32), bar('sk_sub', 260, 14), card('sk_hero', [bar('sk_h_a', 120, 14), bar('sk_h_b', 180, 28)]), card('sk_list', rows('sk_r', 5))]
 	return { id: 'sk', type: 'screen', padding: [64, 24, 40, 24], gap: 16, children: phone }
+}
+
+// ------------------------------------------------------------ semantics
+
+export type StatusTone = 'success' | 'warning' | 'danger' | 'info'
+
+/**
+ * The semantic tone of a status label ("Received" = success, "Pending" = warning,
+ * "Failed" = danger, "Sent" = info), or null when it isn't a status. Status badges
+ * use these token pairs, never the brand color, so a green accent or dark mode
+ * can't make two different statuses look the same.
+ */
+export function statusTone(text: string): StatusTone | null {
+	const t = String(text ?? '').trim().toLowerCase()
+	if (!t || t.length > 24 || t.includes('{')) return null
+	if (/^(received|paid|completed?|complete|done|success(ful)?|active|delivered|approved|verified|confirmed|settled|deposited|refunded|online|healthy|in stock|resolved|shipped|live|on track|accepted|connected|enabled|open)$/.test(t)) return 'success'
+	if (/^(pending|processing|scheduled|due( soon| today)?|in review|review|awaiting|on hold|draft|queued|in progress|unpaid|low stock|at risk|expiring|trial|paused|waiting)$/.test(t)) return 'warning'
+	if (/^(failed|declined|overdue|cancell?ed|rejected|error|blocked|expired|disputed|offline|late|out of stock|suspended|closed|disabled|churned|critical)$/.test(t)) return 'danger'
+	if (/^(sent|transfer(red)?|in transit|new|info|upcoming|outgoing|withdrawn|withdrawal|invited|beta|updated|archived)$/.test(t)) return 'info'
+	return null
+}
+
+const ABBREV: Record<string, string> = {
+	acct: 'account', acc: 'account', noti: 'notifications', notif: 'notifications', notifs: 'notifications', priv: 'privacy', prof: 'profile', img: 'image', pic: 'image',
+	btn: 'button', btns: 'buttons', nav: 'navigation', hdr: 'header', head: 'header', ftr: 'footer', foot: 'footer', txt: 'text', sub: 'subtitle', desc: 'description',
+	tx: 'transactions', txn: 'transactions', txns: 'transactions', trx: 'transactions', st: 'stats', stat: 'stat', ch: 'chart', sb: 'sidebar', side: 'sidebar', cta: 'CTA',
+	av: 'avatar', msg: 'message', msgs: 'messages', pwd: 'password', pw: 'password', pass: 'password', sec: 'section', lbl: 'label', ttl: 'title', amt: 'amount', cat: 'category',
+	cats: 'categories', qty: 'quantity', dash: 'dashboard', ob: 'onboarding', onb: 'onboarding', set: 'settings', cfg: 'settings', pref: 'preferences', prefs: 'preferences',
+	info: 'info', stats: 'stats', art: 'art', dots: 'pager dots', hl: 'highlight', mid: 'middle', bot: 'bottom', btm: 'bottom', tb: 'table', tbl: 'table', col: 'column',
+	cols: 'columns', hero: 'hero', feat: 'features', feats: 'features', tst: 'testimonial', quote: 'quote', pr: 'pricing', cnt: 'content', ct: 'content', main: 'main',
+	bal: 'balance', exp: 'expenses', inc: 'income', bills: 'bills', bill: 'bill', rec: 'recent', recs: 'recommendations', fav: 'favorites', favs: 'favorites', srch: 'search',
+	addr: 'address', ph: 'phone', em: 'email', usr: 'user', admin: 'admin', grp: 'group', lst: 'list', itm: 'item', opt: 'option', opts: 'options', act: 'actions', acts: 'actions',
+	tgl: 'toggle', chk: 'checkbox', ic: 'icon', ico: 'icon', ttle: 'title', subttl: 'subtitle', fld: 'field', frm: 'form', soc: 'social', or: 'divider',
+}
+
+/** "Account" -> true when `token` abbreviates `word` ("set" / "settings", "ob" / "onboarding"). */
+const abbreviates = (token: string, word: string) => {
+	const w = word.toLowerCase()
+	const t = token.toLowerCase()
+	if (!t || !w) return false
+	if (w.startsWith(t)) return true
+	// ob -> onboarding: first letters of the word in order.
+	let i = 0
+	for (const ch of w) if (ch === t[i]) i++
+	return i === t.length && t[0] === w[0] && t.length <= 4
+}
+
+/**
+ * A human layer name for a node whose name is just its id ("ob_art", "set_acct"):
+ * the id's words with the screen prefix dropped and abbreviations spelled out
+ * ("Account section", "Hero art"); a frame that holds a section heading is named
+ * after it. Returns null when the id already reads fine.
+ */
+export function humanLayerName(
+	node: { id: string; kind: string; text?: string; heading?: string; fill?: string; stroke?: string; h?: number },
+	screen: { id: string; name: string } | null
+): string {
+	const words = node.id.split(/[_\-\s]+|(?<=[a-z])(?=[A-Z])/).filter(Boolean)
+	let rest = [...words]
+	// Drop the screen prefix ("settings_", "set_", "ob_").
+	const screenWords = screen ? [screen.id, ...screen.name.split(/\s+/)] : []
+	if (rest.length > 1 && screenWords.some((w) => abbreviates(rest[0], w) || rest[0].toLowerCase() === w.toLowerCase())) rest = rest.slice(1)
+	// Template copies: "tx_row_3" -> "Transactions row 3".
+	const num = rest.length > 1 && /^\d+$/.test(rest[rest.length - 1]) ? rest.pop() : undefined
+	let phrase = rest.map((w) => ABBREV[w.toLowerCase()] ?? w.toLowerCase()).join(' ')
+	const card = node.fill && node.fill !== 'transparent'
+	if (node.kind === 'frame' && node.heading) {
+		const h = node.heading.trim().toLowerCase()
+		phrase = `${h} ${card ? 'card' : 'section'}`
+	} else if (node.kind === 'image' && (node.h ?? 0) >= 240 && /^(art|image|img|hero|pic|illustration|visual)$/i.test(rest.join(''))) phrase = 'hero art'
+	else if (node.kind === 'frame' && phrase.split(' ').length === 1 && !/(row|bar|card|section|list|grid|header|footer|navigation|sidebar|form|table|stats|actions|dots|content|main|group|column|columns|tabs?)$/.test(phrase)) {
+		phrase = `${phrase} ${card ? 'card' : 'section'}`
+	}
+	phrase = phrase.replace(/\b(\w+) \1\b/g, '$1').trim()
+	if (!phrase) return ''
+	const out = phrase[0].toUpperCase() + phrase.slice(1) + (num ? ` ${num}` : '')
+	return out
+}
+
+/** The device a screen was made for (by width), or null for custom sizes. */
+export function deviceOf(w: number): { name: Device; w: number; h: number } | null {
+	const hit = (Object.entries(DEVICES) as [Device, { w: number; h: number }][]).find(([, d]) => Math.abs(d.w - w) < 1)
+	return hit ? { name: hit[0], ...hit[1] } : null
+}
+
+/**
+ * The height a screen should fit in (phones, tablets; desktop app screens with a
+ * sidebar), or null for pages that scroll by design (desktop landing pages).
+ */
+export function foldHeight(screen: { w: number; layoutMode?: string; name?: string }): number | null {
+	const d = deviceOf(screen.w)
+	if (!d) return null
+	if (d.name !== 'desktop') return d.h
+	// A desktop app screen (sidebar beside the content, or named like one) fits the 1024 viewport.
+	return screen.layoutMode === 'horizontal' || /dashboard|admin|console|analytics|inbox|app\b/i.test(screen.name ?? '') ? d.h : null
 }

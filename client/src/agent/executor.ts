@@ -10,8 +10,12 @@ import {
 	type TLShapeId,
 	type TLShapePartial,
 } from 'tldraw'
+import { NOTE_METRICS, toneOf } from '../../../shared/critique.ts'
 import {
 	applySpec,
+	foldHeight,
+	humanLayerName,
+	statusTone,
 	contrast,
 	DEFAULT_THEME,
 	inkOn,
@@ -37,6 +41,7 @@ import {
 	type UiNodeSpec,
 	type UiProps,
 	type UiTreeNode,
+	type LayoutSpec,
 } from '../../../shared/design.ts'
 import { AGENT_NAME, type Author, type ToolResult } from '../../../shared/protocol.ts'
 import { measureTextDom } from '../design/measure.ts'
@@ -56,6 +61,7 @@ const toId = (id: unknown): TLShapeId => {
 	if (s.startsWith('shape:')) return s as TLShapeId
 	return createShapeId(s.replace(/[^a-zA-Z0-9_-]/g, '_') || crypto.randomUUID())
 }
+const cap = (t: string) => (t ? t[0].toUpperCase() + t.slice(1) : t)
 const bare = (id: string) => id.replace(/^shape:/, '')
 const cleanId = (id: unknown) => bare(toId(id))
 
@@ -127,9 +133,13 @@ export class CanvasExecutor {
 		this.hooks.onAgentCursor?.(x, y)
 	}
 
+	/**
+	 * Parks the agent's cursor just past the bottom-right corner of what it worked on,
+	 * so its name chip sits beside the element instead of covering it (or a note's text).
+	 */
 	private _pointAt(id: TLShapeId) {
 		const b = this.editor.getShapePageBounds(id)
-		if (b) this._point(b.center.x, b.center.y)
+		if (b) this._point(b.maxX + 6, b.maxY + 6)
 	}
 
 	private _knownIds(filter: (s: TLShape) => boolean = () => true, max = 60) {
@@ -235,7 +245,10 @@ export class CanvasExecutor {
 	private _relayout(root: UiShape | null) {
 		if (!root || !this.editor.getShape(root.id)) return
 		const editor = this.editor
-		if (!this.hooks.asUser) this._fixChartUnits(root)
+		if (!this.hooks.asUser) {
+			this._fixChartUnits(root)
+			this._fitToFold(editor.getShape(root.id) as UiShape)
+		}
 		const tree = this._toTree(editor.getShape(root.id) as UiShape)
 		const node = toLayoutNode(tree)
 		let boxes = layoutTree(node, { measure: measureTextDom })
@@ -267,6 +280,134 @@ export class CanvasExecutor {
 		}
 		walk(tree, true)
 		if (updates.length) editor.updateShapes(updates)
+	}
+
+	/** The height a screen should fit in (see foldHeight), or null when it may scroll. */
+	private _fold(screen: UiShape): number | null {
+		if (screen.props.kind !== 'screen') return null
+		return foldHeight({ w: screen.props.w, layoutMode: this._meta(screen).layout?.mode, name: screen.props.name })
+	}
+
+	/**
+	 * A phone (or desktop app) screen whose content runs past the device height is
+	 * tightened first: vertical gaps and paddings shrink step by step (never under
+	 * 4-8px) until it fits. When even that isn't enough the screen grows and the
+	 * tool result warns, so the model drops rows in the same turn.
+	 */
+	private _fitToFold(screen: UiShape | undefined) {
+		if (!screen || screen.props.kind !== 'screen') return
+		const fold = this._fold(screen)
+		if (!fold) return
+		const tree = this._toTree(screen)
+		const hugNeed = (t: UiTreeNode) => {
+			const n = toLayoutNode(t)
+			return layoutTree({ ...n, sizing: { ...n.sizing, h: 'hug' } }, { measure: measureTextDom }).get(n.id)?.h ?? 0
+		}
+		if (hugNeed(tree) <= fold + 1) return
+		const original = new Map<string, LayoutSpec>()
+		const walk = (n: UiTreeNode, fn: (n: UiTreeNode) => void) => {
+			fn(n)
+			n.children.forEach((c) => walk(c, fn))
+		}
+		walk(tree, (n) => {
+			if (n.meta.layout && n.meta.layout.mode !== 'none') original.set(n.id, { ...n.meta.layout, padding: [...n.meta.layout.padding] as LayoutSpec['padding'] })
+		})
+		const shrink = (v: number, f: number, min: number) => (v <= min ? v : Math.max(min, Math.round(v * f)))
+		for (const f of [0.85, 0.7, 0.55]) {
+			walk(tree, (n) => {
+				const o = original.get(n.id)
+				if (!o) return
+				const [t, r, b, l] = o.padding
+				const isScreen = n.props.kind === 'screen'
+				n.meta.layout = {
+					...o,
+					gap: o.mode === 'vertical' ? shrink(o.gap, f, isScreen ? 12 : 4) : o.gap,
+					padding: [shrink(t, f, isScreen ? 16 : 4), r, shrink(b, f, isScreen ? 16 : 4), l],
+				}
+			})
+			if (hugNeed(tree) > fold + 1) continue
+			const updates: TLShapePartial[] = []
+			walk(tree, (n) => {
+				const o = original.get(n.id)
+				const l = n.meta.layout
+				if (!o || !l || (o.gap === l.gap && o.padding.every((v, i) => v === l.padding[i]))) return
+				const shape = this.editor.getShape(toId(n.id)) as UiShape | undefined
+				if (shape) updates.push({ id: shape.id, type: 'ui', meta: { ...shape.meta, layout: l } } as TLShapePartial)
+			})
+			if (updates.length) this.editor.updateShapes(updates)
+			// A screen that grew earlier goes back to its device height.
+			if (screen.props.h > fold) this.editor.updateShape({ id: screen.id, type: 'ui', props: { h: fold } } as TLShapePartial)
+			return
+		}
+	}
+
+	/** The first text-bearing node of a screen whose bottom is past `fold` (what a person can't see without scrolling). */
+	private _belowFold(screen: UiShape, fold: number): string | null {
+		const sb = this.editor.getShapePageBounds(screen.id)
+		if (!sb) return null
+		let best: { y: number; label: string; rank: number } | null = null
+		const walk = (s: UiShape) => {
+			const kids = this._children(s)
+			if (!kids.length && s.id !== screen.id) {
+				const b = this.editor.getShapePageBounds(s.id)
+				const label = s.props.text?.trim()
+				if (b && label && b.maxY - sb.y > fold + 1) {
+					const rank = s.props.kind === 'button' ? 0 : s.props.kind === 'text' && s.props.fontWeight >= 600 ? 1 : 2
+					if (!best || rank < best.rank || (rank === best.rank && b.y < best.y)) best = { y: b.y, label, rank }
+				}
+			}
+			kids.forEach(walk)
+		}
+		walk(screen)
+		return (best as { label: string } | null)?.label ?? null
+	}
+
+	/** A readable name for a node in a sentence: its text in quotes, else its layer name. */
+	private _say(s: UiShape): string {
+		const p = s.props
+		if (p.text && ['text', 'button', 'badge', 'input', 'checkbox'].includes(p.kind)) return `"${p.text.length > 40 ? `${p.text.slice(0, 38)}…` : p.text}"`
+		const name = p.name && p.name !== bare(s.id) ? p.name : humanLayerName({ id: bare(s.id), kind: p.kind }, null)
+		return `the ${name.toLowerCase()}`
+	}
+
+	/**
+	 * Layer names people can read: a node named only by its id ("ob_art", "set_acct")
+	 * gets one from its id's words, its section heading and its kind ("Hero art",
+	 * "Account section"). Text-like nodes show their text in Layers, so they keep the id.
+	 */
+	private _nameLayers(tree: UiTreeNode, screen: { id: string; name: string } | null) {
+		const walk = (n: UiTreeNode) => {
+			if (!['text', 'button', 'input', 'checkbox', 'badge', 'screen'].includes(n.props.kind) && (!n.props.name || n.props.name === n.id)) {
+				const kids = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0))
+				const isHeading = (c: UiTreeNode) => c.props.kind === 'text' && c.props.fontWeight >= 600 && c.props.text.length <= 28 && !/[\d$€£%]/.test(c.props.text)
+				const heading =
+					n.props.kind === 'frame' && kids.length >= 2
+						? (kids.slice(0, 2).find(isHeading) ?? kids.slice(0, 1).flatMap((c) => [...c.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).slice(0, 2)).find(isHeading))?.props.text
+						: undefined
+				const name = humanLayerName({ id: n.id, kind: n.props.kind, heading, fill: n.props.fill, stroke: n.props.stroke, h: n.props.h }, screen)
+				if (name) {
+					n.props.name = name
+					;(n.meta as Args).autoName = name
+				}
+			}
+			n.children.forEach(walk)
+		}
+		walk(tree)
+	}
+
+	/** Status badges ("Sent", "Pending") get their semantic token pair instead of the brand color. */
+	private _semanticBadges(tree: UiTreeNode) {
+		const walk = (n: UiTreeNode) => {
+			if (n.props.kind === 'badge') {
+				const tone = statusTone(n.props.text)
+				if (tone && /^\$(primary|primarySoft|onPrimary)$/.test(n.props.fill) && /^\$(primary|onPrimary|primarySoft|text)$/.test(n.props.textColor)) {
+					n.props.fill = `$${tone}Soft`
+					n.props.textColor = `$${tone}`
+				}
+			}
+			n.children.forEach(walk)
+		}
+		walk(tree)
 	}
 
 	/** Makes every id in `tree` (except the root) unique on the page; returns renames. */
@@ -326,7 +467,7 @@ export class CanvasExecutor {
 		const m = this._meta(shape)
 		const d = kindDefaults(p.kind)
 		const out: Args = { id: bare(shape.id), type: p.kind }
-		if (p.name && p.name !== out.id) out.name = p.name
+		if (p.name && p.name !== out.id && (shape.meta as Args)?.autoName !== p.name) out.name = p.name
 		if (p.text) out.text = p.text
 		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image', 'badge'].includes(p.kind) && (p.kind !== 'icon' || p.icon !== d.props.icon)) out.icon = p.icon
 		if (isScreen(shape)) {
@@ -435,6 +576,12 @@ export class CanvasExecutor {
 			kids.forEach(walk)
 		}
 		walk(root)
+		const fold = this._fold(root)
+		if (fold && root.props.h > fold + 1) {
+			const below = this._belowFold(root, fold)
+			const device = root.props.w >= 1000 ? 'desktop viewport' : root.props.w >= 600 ? 'tablet' : 'phone'
+			warnings.push(`Screen "${bare(root.id)}" is ${Math.round(root.props.h)}px tall, past the ${fold}px ${device}${below ? `: "${below}" is below the fold` : ''}, even with tightened spacing. Make it fit now: fewer rows (2-3 per section), shorter copy, or drop a section.`)
+		}
 		for (const t of this._misalignedTables(root)) warnings.push(`The columns of "${t}" don't line up between the header and the rows: give each column's cells the same fixed width in the header and the row template (one column width 'fill'), right-align amounts.`)
 		return warnings.slice(0, 8)
 	}
@@ -452,67 +599,88 @@ export class CanvasExecutor {
 		const theme = themeFor(editor, screen.id)
 		const phone = screen.props.w < 600
 		const sb = editor.getShapePageBounds(screen.id)
-		const add = (s: UiShape, kind: AuditIssue['kind'], detail: string) => issues.push({ id: bare(s.id), screen: sid, kind, detail })
+		const add = (s: UiShape, kind: AuditIssue['kind'], detail: string, say?: string) => issues.push({ id: bare(s.id), screen: sid, kind, detail, ...(say ? { say } : {}) })
+		const screenName = screen.props.name || sid
 		const walk = (s: UiShape) => {
 			const p = s.props
 			const kids = this._children(s)
 			if (isContainerKind(p.kind) && kids.length) {
 				const bottom = Math.max(...kids.map((k) => k.y + k.props.h))
 				const right = Math.max(...kids.map((k) => k.x + k.props.w))
-				if (bottom > p.h + 1) add(s, 'overflow', `content overflows "${bare(s.id)}" by ${Math.round(bottom - p.h)}px at the bottom`)
-				if (right > p.w + 1) add(s, 'overflow', `content overflows "${bare(s.id)}" by ${Math.round(right - p.w)}px on the right`)
+				if (bottom > p.h + 1 && s.id !== screen.id) add(s, 'overflow', `content overflows "${bare(s.id)}" by ${Math.round(bottom - p.h)}px at the bottom`, `Content spills ${Math.round(bottom - p.h)}px out of the bottom of ${this._say(s)}.`)
+				if (right > p.w + 1) add(s, 'overflow', `content overflows "${bare(s.id)}" by ${Math.round(right - p.w)}px on the right`, `Content spills ${Math.round(right - p.w)}px past the right edge of ${this._say(s)}.`)
 				const l = this._meta(s).layout
 				const cards = kids.filter((k) => k.props.kind === 'frame' && (k.props.fill !== 'transparent' || k.props.stroke !== 'transparent'))
 				if (l?.mode === 'horizontal' && cards.length >= 2) {
 					const hs = cards.map((k) => k.props.h)
-					if (Math.max(...hs) - Math.min(...hs) > 4) add(s, 'spacing', `cards in "${bare(s.id)}" have unequal heights (${Math.round(Math.min(...hs))}-${Math.round(Math.max(...hs))}px)`)
+					if (Math.max(...hs) - Math.min(...hs) > 4) add(s, 'spacing', `cards in "${bare(s.id)}" have unequal heights (${Math.round(Math.min(...hs))}-${Math.round(Math.max(...hs))}px)`, `The cards in ${this._say(s)} have unequal heights (${Math.round(Math.min(...hs))} to ${Math.round(Math.max(...hs))}px); give the row alignItems stretch.`)
 				}
 			}
 			const b = editor.getShapePageBounds(s.id)
-			if (sb && b && s.id !== screen.id && (b.maxY > sb.maxY + 1 || b.maxX > sb.maxX + 1 || b.x < sb.x - 1 || b.y < sb.y - 1)) add(s, 'overflow', `"${bare(s.id)}" extends outside the screen`)
+			if (sb && b && s.id !== screen.id && (b.maxY > sb.maxY + 1 || b.maxX > sb.maxX + 1 || b.x < sb.x - 1 || b.y < sb.y - 1)) add(s, 'overflow', `"${bare(s.id)}" extends outside the screen`, `${cap(this._say(s))} runs past the edge of ${screenName}.`)
 			const hasText = ['text', 'button', 'badge', 'input', 'checkbox'].includes(p.kind) && !!p.text
 			if (hasText && p.w >= 1) {
 				const wraps = p.kind === 'text' && p.h >= p.fontSize * LINE_HEIGHT * 1.5
 				if (p.kind === 'text') {
 					const m = measureTextDom(p.text, p.fontSize, wraps ? p.w : undefined, p.fontWeight)
-					if (wraps ? m.h > p.h + 2 : m.w > p.w + 2) add(s, 'clipped', `the text of "${bare(s.id)}" doesn't fit its box`)
+					if (wraps ? m.h > p.h + 2 : m.w > p.w + 2) add(s, 'clipped', `the text of "${bare(s.id)}" doesn't fit its box`, `The text ${this._say(s)} is clipped by its box; give it room to wrap or shorten it.`)
 				} else if (p.kind === 'button') {
 					const m = this._meta(s)
 					const need = hugWidth({ id: s.id, kind: 'button', w: p.w, h: p.h, text: p.text, icon: p.icon, fontSize: p.fontSize, fontWeight: p.fontWeight, layout: m.layout, sizing: m.sizing }, measureTextDom)
-					if (p.w + 2 < need) add(s, 'clipped', `the label of "${bare(s.id)}" is clipped (needs ${Math.round(need)}px, has ${Math.round(p.w)}px)`)
+					if (p.w + 2 < need) add(s, 'clipped', `the label of "${bare(s.id)}" is clipped (needs ${Math.round(need)}px, has ${Math.round(p.w)}px)`, `The ${this._say(s)} button label is clipped: it needs ${Math.round(need)}px but has ${Math.round(p.w)}px.`)
 				}
-				if (p.fontSize < 12) add(s, 'small_text', `"${bare(s.id)}" is ${p.fontSize}px text`)
+				if (p.fontSize < 12) add(s, 'small_text', `"${bare(s.id)}" is ${p.fontSize}px text`, `${cap(this._say(s))} is ${p.fontSize}px text; keep text at 12px or more so it stays readable.`)
 				const bg = backdropFor(editor, s.id, theme, !['text', 'checkbox'].includes(p.kind))
 				const fg = p.kind === 'input' ? resolveColor(p.textColor, theme) : inkOn(p.textColor, bg, theme)
 				const large = p.fontSize >= 24 || (p.fontSize >= 18.5 && p.fontWeight >= 700)
 				const ratio = contrast(fg, bg)
-				if (parseHexColor(fg) && parseHexColor(bg) && ratio < (large ? 3 : 4.5)) add(s, 'contrast', `"${bare(s.id)}" text contrast is ${ratio.toFixed(1)}:1`)
+				if (parseHexColor(fg) && parseHexColor(bg) && ratio < (large ? 3 : 4.5)) add(s, 'contrast', `"${bare(s.id)}" text contrast is ${ratio.toFixed(1)}:1`, `${cap(this._say(s))} is only ${ratio.toFixed(1)}:1 against its background; text needs ${large ? 3 : 4.5}:1.`)
 			}
-			if (phone && (p.kind === 'button' || p.kind === 'input') && p.h < 44 && p.w >= 1) add(s, 'touch', `"${bare(s.id)}" is ${Math.round(p.h)}px tall (under 44)`)
+			if (phone && (p.kind === 'button' || p.kind === 'input') && p.h < 44 && p.w >= 1) add(s, 'touch', `"${bare(s.id)}" is ${Math.round(p.h)}px tall (under 44)`, `${cap(this._say(s))} is ${Math.round(p.h)}px tall; touch targets need 44px.`)
 			kids.forEach(walk)
 		}
 		walk(screen)
-		// A phone screen that grew past its device height scrolls: whatever is below the fold is a real finding.
-		const device = Object.values(DEVICES).find((d) => d.w === screen.props.w)
-		if (phone && device && screen.props.h > device.h + 1) issues.push({ id: sid, screen: sid, kind: 'overflow', detail: `"${sid}" is ${Math.round(screen.props.h)}px tall, past the ${device.h}px phone: the bottom of it is below the fold` })
-		for (const t of this._misalignedTables(screen)) issues.push({ id: t, screen: sid, kind: 'spacing', detail: `the columns of "${t}" are misaligned between header and rows` })
+		// A phone (or desktop app) screen that grew past its device height scrolls: whatever is below the fold is a real finding.
+		const fold = this._fold(screen)
+		if (fold && screen.props.h > fold + 1) {
+			const below = this._belowFold(screen, fold)
+			const device = screen.props.w >= 1000 ? 'desktop viewport' : screen.props.w >= 600 ? 'tablet' : 'phone'
+			issues.unshift({
+				id: sid,
+				screen: sid,
+				kind: 'overflow',
+				detail: `"${sid}" is ${Math.round(screen.props.h)}px tall, past the ${fold}px ${device}: ${below ? `"${below}" is` : 'the bottom of it is'} below the fold`,
+				say: `${screenName} is ${Math.round(screen.props.h)}px tall on a ${fold}px ${device}, so ${below ? `"${below}"` : 'the end of it'} sits below the fold; tighten the sections so it fits.`,
+			})
+		}
+		for (const t of this._misalignedTables(screen)) {
+			const ts = this.editor.getShape(toId(t)) as UiShape | undefined
+			issues.push({ id: t, screen: sid, kind: 'spacing', detail: `the columns of "${t}" are misaligned between header and rows`, say: `The columns of ${ts ? this._say(ts) : 'the table'} don't line up between the header and the rows.` })
+		}
 		return issues.slice(0, 20)
 	}
 
-	/** Where a critique note goes (see add_comment). */
-	private _commentSpot(id: TLShapeId, target: TLShape | null, tb: Box | null, sb: Box | null, NOTE: number, view: Box): { x: number; y: number } {
+	/**
+	 * Where a critique note goes (see add_comment): just outside the target's screen
+	 * (right, left, below, above), level with the node, clear of screens, their name
+	 * labels and other notes, with the shortest leader to the node that crosses no
+	 * other screen.
+	 */
+	private _commentSpot(id: TLShapeId, target: TLShape | null, tb: Box | null, sb: Box | null, W: number, H: number, view: Box): { x: number; y: number } {
 		const editor = this.editor
-		if (!tb || !sb) return { x: view.center.x - NOTE / 2, y: view.center.y - NOTE / 2 }
+		if (!tb || !sb) return { x: view.center.x - W / 2, y: view.center.y - H / 2 }
 		const ownScreen = target ? this._screenOf(target) : null
 		const obstacles: Box[] = []
 		const otherScreens: Box[] = []
 		for (const s of editor.getCurrentPageShapes()) {
 			if (s.id === id || s.type === 'arrow' || (target && s.id === target.id)) continue
 			if (isUi(s) && !isScreen(s)) continue
+			// Outlines sit on the screens; only cards and other shapes are in the way.
+			if (s.type === 'critique' && (s.props as { kind?: string }).kind === 'highlight') continue
 			if (s.type === 'geo' && (s.meta as Args)?.role === 'annotation') continue
 			const b = editor.getShapePageBounds(s)
 			if (!b) continue
-			const box = b.clone().expandBy(24)
+			const box = b.clone().expandBy(isScreen(s) ? 20 : 12)
 			if (isScreen(s)) {
 				box.y -= 28
 				box.h += 28
@@ -520,30 +688,29 @@ export class CanvasExecutor {
 			}
 			obstacles.push(box)
 		}
-		const gap = 40
-		const H = NOTE * 1.15 // notes grow a little with longer text
-		const target0 = tb.center
+		const gap = 32
 		const free = (b: Box) => !obstacles.some((o) => Box.Collides(o, b))
-		// The leader runs from the note's center to the node: it must not cut through another screen.
-		const crosses = (b: Box) => otherScreens.some((o) => segmentHitsBox(b.center, target0, o))
+		// The leader runs from the note to the node: it must not cut through another screen.
+		const crosses = (b: Box) => otherScreens.some((o) => segmentHitsBox(b.center, tb.center, o))
 		const yLevel = Math.max(sb.y, Math.min(tb.center.y - H / 2, sb.maxY - H))
-		const xLevel = Math.max(sb.x, Math.min(tb.center.x - NOTE / 2, sb.maxX - NOTE))
-		const lanes: { start: Box; dx: number; dy: number }[] = [
-			{ start: new Box(sb.maxX + gap, yLevel, NOTE, H), dx: 0, dy: 1 },
-			{ start: new Box(sb.x - gap - NOTE, yLevel, NOTE, H), dx: 0, dy: 1 },
-			{ start: new Box(xLevel, sb.maxY + gap, NOTE, H), dx: 1, dy: 0 },
-			{ start: new Box(xLevel, sb.y - 28 - gap - H, NOTE, H), dx: 1, dy: 0 },
+		const xLevel = Math.max(sb.x, Math.min(tb.center.x - W / 2, sb.maxX - W))
+		const lanes: { start: Box; dx: number; dy: number; bias: number }[] = [
+			{ start: new Box(sb.maxX + gap, yLevel, W, H), dx: 0, dy: 1, bias: 0 },
+			{ start: new Box(sb.x - gap - W, yLevel, W, H), dx: 0, dy: 1, bias: 0 },
+			{ start: new Box(xLevel, sb.maxY + gap, W, H), dx: 1, dy: 0, bias: 60 },
+			{ start: new Box(xLevel, sb.y - 28 - gap - H, W, H), dx: 1, dy: 0, bias: 60 },
 		]
+		// Leader length: the gap between the note's edge and the node's edge.
+		const leader = (b: Box) => Math.hypot(Math.max(0, b.x - tb.maxX, tb.x - b.maxX), Math.max(0, b.y - tb.maxY, tb.y - b.maxY))
 		let best: { box: Box; score: number } | null = null
-		for (const [li, lane] of lanes.entries()) {
-			for (let k = 0; k < 40; k++) {
-				// Slide along the lane: 0, +1, -1, +2, -2... steps of 24.
-				const off = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 24
-				const b = new Box(lane.start.x + lane.dx * off, lane.start.y + lane.dy * off, NOTE, H)
+		for (const lane of lanes) {
+			for (let k = 0; k < 60; k++) {
+				// Slide along the lane: 0, +1, -1, +2, -2... steps of 16.
+				const off = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 16
+				const b = new Box(lane.start.x + lane.dx * off, lane.start.y + lane.dy * off, W, H)
 				if (!free(b) || crosses(b)) continue
 				const inView = b.x >= view.x && b.y >= view.y && b.maxX <= view.maxX && b.maxY <= view.maxY
-				// Beside the screen reads best; above/below only when the sides are taken or far.
-				const score = Math.hypot(b.center.x - target0.x, b.center.y - target0.y) + (inView ? 0 : 200) + (li >= 2 ? 300 : 0)
+				const score = leader(b) + lane.bias + (inView ? 0 : 80)
 				if (!best || score < best.score) best = { box: b, score }
 				break
 			}
@@ -705,6 +872,10 @@ export class CanvasExecutor {
 		tree.y = pos.y
 		const replaceable = new Set(existing ? editor.getShapeAndDescendantIds([existing.id]) : skeleton ? editor.getShapeAndDescendantIds([skeleton.id]) : [])
 		const renamedRaw = this._dedupeIds(tree, bare(id), new Set([...replaceable].map(bare)))
+		if (!this.hooks.asUser) {
+			this._semanticBadges(tree)
+			this._nameLayers(tree, { id: bare(id), name: tree.props.name })
+		}
 
 		this._act(() =>
 			editor.run(() => {
@@ -757,6 +928,13 @@ export class CanvasExecutor {
 			Object.assign(renamed, this._dedupeIds(t, prefix))
 			used.add(cleanId(t.id))
 		}
+		if (!this.hooks.asUser) {
+			const screen = this._screenOf(parent)
+			for (const t of trees) {
+				this._semanticBadges(t)
+				this._nameLayers(t, screen ? { id: bare(screen.id), name: screen.props.name } : null)
+			}
+		}
 		const existing = this._children(parent)
 		const index = Number.isInteger(args.index) ? Math.max(0, Math.min(existing.length, args.index)) : existing.length
 		this._act(() =>
@@ -804,6 +982,11 @@ export class CanvasExecutor {
 		const patch: Partial<UiNodeSpec> = {}
 		for (const k of SPEC_KEYS) if (args[k] !== undefined) (patch as any)[k] = args[k]
 		const next = applySpec(props, meta, patch)
+		// A status badge keeps its semantic colors when the brand changes ("use a green accent").
+		if (!this.hooks.asUser && next.props.kind === 'badge') {
+			const probe: UiTreeNode = { id: bare(shape.id), props: next.props, meta: next.meta, x: 0, y: 0, children: [] }
+			this._semanticBadges(probe)
+		}
 		const parent = editor.getShape(shape.parentId as TLShapeId)
 		const free = !isUi(parent) || (this._meta(parent).layout?.mode ?? 'none') === 'none'
 		this._act(() =>
@@ -1034,7 +1217,7 @@ export class CanvasExecutor {
 		const bounds = unionBounds(editor, shapes)!
 		const MAX = 1600
 		const scale = Math.min(Number(args.scale) || 1, MAX / Math.max(bounds.w + 64, bounds.h + 64, 1))
-		const { blob, width, height } = await editor.toImage(shapes, { format: 'png', background: true, padding: 32, scale })
+		const { blob, width, height } = await editor.toImage(shapes, { format: 'png', background: true, padding: 32, scale, pixelRatio: 1 })
 		const image = await new Promise<string>((resolve, reject) => {
 			const reader = new FileReader()
 			reader.onload = () => resolve(reader.result as string)
@@ -1070,32 +1253,24 @@ export class CanvasExecutor {
 		if (!bounds) throw new Error(`None of those shapes exist. Nodes: ${this._knownIds(isUi)}`)
 		const id = toId(args.id)
 		const style = args.style ?? 'outline'
-		const c = color(args.color, 'red')
-		const pad = style === 'circle' ? 24 : 8
+		// A thin outline 6px outside the node (never on its text), in the tone of the feedback.
+		const pad = 6
 		const box =
 			style === 'underline'
-				? new Box(bounds.x, bounds.maxY + 6, bounds.w, 6)
+				? new Box(bounds.x, bounds.maxY + 4, bounds.w, 4)
 				: new Box(bounds.x - pad, bounds.y - pad, bounds.w + pad * 2, bounds.h + pad * 2)
 		this._act(() => {
 			if (editor.getShape(id)) editor.deleteShapes([id])
 			editor.createShape({
 				id,
-				type: 'geo',
+				type: 'critique',
 				x: box.x,
 				y: box.y,
 				meta: agentMeta({ role: 'annotation', targets: args.shapeIds }),
-				props: {
-					geo: style === 'circle' ? 'ellipse' : 'rectangle',
-					w: box.w,
-					h: box.h,
-					color: c,
-					fill: style === 'underline' ? 'solid' : 'none',
-					dash: style === 'outline' ? 'dashed' : 'draw',
-					size: 's',
-				},
-			})
+				props: { kind: 'highlight', w: box.w, h: box.h, tone: toneOf(args.color ?? 'red'), to: '', scale: 1, richText: toRichText('') },
+			} as any)
 		})
-		this._point(box.maxX, box.y)
+		this._point(box.maxX + 4, box.maxY + 4)
 		return { id: bare(id), highlighted: targets.filter(Boolean).length }
 	}
 
@@ -1113,18 +1288,9 @@ export class CanvasExecutor {
 		const tb = target ? editor.getShapePageBounds(target) : null
 		const sb = screen ? editor.getShapePageBounds(screen) : tb
 		const zoom = editor.getZoomLevel()
-		const scale = Math.min(2.2, Math.max(1, 0.6 / Math.max(zoom, 0.05)))
-		const NOTE = 200 * scale
+		// Readable when zoomed out to fit several screens (13px text stays ~10px+ on screen), capped so a note never dwarfs a phone.
+		const scale = Math.min(2.8, Math.max(1, 0.85 / Math.max(zoom, 0.05)))
 		const view = editor.getViewportPageBounds()
-		const pos = this._commentSpot(id, target ?? null, tb ?? null, sb ?? null, NOTE, view)
-		const kindColor: Record<string, TLDefaultColorStyle> = {
-			issue: 'light-red',
-			suggestion: 'yellow',
-			praise: 'light-green',
-			question: 'light-blue',
-			error: 'light-red',
-			hint: 'yellow',
-		}
 		// Feedback on a collaborator's node is addressed to them even if the model forgot to say so.
 		const targetAuthor = target ? authorOf(target) : null
 		const to = String(args.addressedTo ?? '').replace(/^@/, '').trim() || (targetAuthor?.kind === 'user' ? targetAuthor.name : '')
@@ -1138,27 +1304,29 @@ export class CanvasExecutor {
 			}
 		}
 		const text = to && !body.startsWith(`@${to}`) ? `@${to} ${body}` : body
+		// A left-aligned card sized to its text: header (tone + addressee) over the comment.
+		const M = NOTE_METRICS
+		const W = M.width * scale
+		const lines = measureTextDom(body, M.fontSize, M.width - M.padX * 2 - M.rule, 400).h / (M.fontSize * LINE_HEIGHT)
+		const H = Math.ceil((M.padY * 2 + M.headerH + M.gap + Math.max(1, Math.round(lines)) * M.fontSize * M.lineHeight + 4) * scale)
+		const pos = this._commentSpot(id, target ?? null, tb ?? null, sb ?? null, W, H, view)
 		const leader = createShapeId(`${bare(id)}_leader`)
 		this._act(() => {
 			for (const old of [id, leader]) if (editor.getShape(old)) editor.deleteShapes([old])
 			editor.createShape({
 				id,
-				type: 'note',
+				type: 'critique',
 				x: pos.x,
 				y: pos.y,
 				meta: agentMeta({ role: 'comment', kind: args.kind }),
-				props: { richText: toRichText(text), color: kindColor[args.kind] ?? 'yellow', size: 's', font: 'sans', scale },
-			})
+				props: { kind: 'note', w: W, h: H, tone: toneOf(args.kind), to, scale, richText: toRichText(text) },
+			} as any)
 			if (target) {
-				this._arrow(leader, editor.getShape(id)!, target, { color: 'grey', dash: 'dotted', size: 's' }, agentMeta({ role: 'annotation' }))
+				this._arrow(leader, editor.getShape(id)!, target, { color: 'grey', dash: 'solid', size: 's', arrowheadEnd: 'dot', arrowheadStart: 'none' }, agentMeta({ role: 'annotation' }))
 			}
 		})
-		this._pointAt(id)
-		// Re-measure once fonts settle (any update recomputes the note's growY), so long text never spills out.
-		setTimeout(() => {
-			const note = editor.getShape(id)
-			if (note) this._act(() => editor.updateShape({ id, type: 'note', props: { growY: ((note.props as { growY?: number }).growY ?? 0) + 1 } } as TLShapePartial))
-		}, 500)
+		// Park the cursor below the card's corner, never on its text.
+		this._point(pos.x + W + 6, pos.y + H + 6)
 		return { id: bare(id), x: Math.round(pos.x), y: Math.round(pos.y) }
 	}
 }

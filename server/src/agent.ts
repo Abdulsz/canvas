@@ -65,6 +65,12 @@ export class AgentSession {
 	private askedQuestions: string[] = []
 	/** The request that started the current turn (to keep "everything" edits on every screen). */
 	private turnRequest = ''
+	/** Whether this turn's tool calls changed the canvas (a turn that did gets a steering question). */
+	private turnChanged = false
+	/** Lines of the current turn share this id (chat logs show them as one reply). */
+	private turnId = ''
+	/** Critique notes added this turn, by screen (critiques cover every screen with measured issues, 3-5 notes). */
+	private turnComments: string[] = []
 	private opts: Required<AgentOptions>
 
 	constructor(
@@ -229,6 +235,8 @@ export class AgentSession {
 
 	private async runTurn(trigger: Trigger) {
 		this.busy = true
+		this.turnId = `turn_${++this.callSeq}`
+		this.turnComments = []
 		const abort = new AbortController()
 		this.abort = abort
 		this.broadcastState()
@@ -270,9 +278,9 @@ export class AgentSession {
 			const request = trigger.kind === 'message' ? trigger.text : ''
 			const admit = (sentence: string, source: 'opener' | 'designer' | 'narration'): boolean => {
 				if (/\?["')\]]*$/.test(sentence.trim())) {
-					if (source === 'opener' || askedThisTurn || this.askedQuestions.some((q) => sameQuestion(sentence, q))) return false
+					if (source === 'opener' || askedThisTurn) return false
+					// Checked against the canvas when it is due to play (see vetQuestion).
 					askedThisTurn = true
-					this.askedQuestions = [...this.askedQuestions, sentence].slice(-8)
 					return true
 				}
 				// "Let me check the canvas first" is filler: the acknowledgement already covered it.
@@ -368,8 +376,20 @@ export class AgentSession {
 							}
 							debug(`sentence: ${sentence.slice(0, 40)}`)
 							const line = this.prepareLine(sentence)
-							const due = /\?["')\]]*$/.test(sentence.trim()) ? Promise.all([previous, stepToolsDone]) : previous
-							lines.push(due.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
+							if (/\?["')\]]*$/.test(sentence.trim())) {
+								// The question plays once this step's tool calls ran, after a check against the
+								// canvas: a copy tweak, something already true, or a repeat is swapped for the next
+								// meaningful product step.
+								lines.push(
+									Promise.all([previous, stepToolsDone]).then(async () => {
+										if (abort.signal.aborted) return
+										const final = await this.vetQuestion(sentence, review, debug)
+										if (!final || abort.signal.aborted) return
+										this.askedQuestions = [...this.askedQuestions, final].slice(-8)
+										return this.say(final, driver!, { line: final === sentence ? line : this.prepareLine(final) })
+									})
+								)
+							} else lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
 						},
 						onText: (t) => debug(`text done (${t.length} chars)${t.length > 200 ? `: ${t.slice(0, 400)}` : ''}`),
 						onToolCall: (call) => {
@@ -455,6 +475,23 @@ export class AgentSession {
 					this.pushHistory({ role: 'user', content: [{ type: 'text', text: 'Canvas image(s) you requested:' }, ...images] })
 				}
 			}
+			// A critique covers every screen the audit found problems on: a screen the model
+			// skipped gets a note made from the measurement itself (true by construction).
+			if (review && this.turnAudit?.length && !abort.signal.aborted) {
+				driver = this.pickDriver(driver)
+				if (driver) await this.coverAuditedScreens(driver, trigger.kind === 'message' || trigger.kind === 'check_work' ? trigger.from.name : '', abort.signal)
+			}
+			// A design turn that changed the canvas but never asked: one question about the next step.
+			if (!review && !askedThisTurn && trigger.kind === 'message' && this.turnChanged && !abort.signal.aborted && driver) {
+				const q = nextStepQuestion(this.canvasFacts(), this.askedQuestions)
+				if (q) {
+					askedThisTurn = true
+					this.askedQuestions = [...this.askedQuestions, q].slice(-8)
+					const d = driver
+					const line = this.prepareLine(q)
+					speech = speech.then(() => (abort.signal.aborted ? undefined : this.say(q, d, { line })))
+				}
+			}
 			await speech
 		} catch (err: any) {
 			if (!abort.signal.aborted) {
@@ -466,6 +503,7 @@ export class AgentSession {
 			const d = skeletonPlaced ? this.pickDriver(driver) : null
 			if (d) await this.callClient(d, 'remove_skeleton', {})
 			this.turnAudit = null
+			this.turnChanged = false
 			this.abort = null
 			this.busy = false
 			this.status('')
@@ -582,8 +620,9 @@ export class AgentSession {
 	): Promise<void> {
 		const { sayId, audioUrl } = opts.line ?? this.prepareLine(text, opts.cached)
 		const ephemeral = opts.ephemeral || undefined
-		this.broadcast({ type: 'agent_say', sayId, text, report: false, audioUrl, ephemeral }, driver.ws)
-		this.send(driver.ws, { type: 'agent_say', sayId, text, report: true, audioUrl, ephemeral })
+		const turnId = this.turnId || undefined
+		this.broadcast({ type: 'agent_say', sayId, text, report: false, audioUrl, ephemeral, turnId }, driver.ws)
+		this.send(driver.ws, { type: 'agent_say', sayId, text, report: true, audioUrl, ephemeral, turnId })
 		// The driver reports when it finishes speaking (immediately if muted); this is only a safety net.
 		const timeoutMs = Math.min(this.opts.maxSpeechWaitMs, 3000 + text.split(/\s+/).length * 600)
 		return new Promise<void>((resolve) => {
@@ -618,14 +657,80 @@ export class AgentSession {
 		if (name === 'set_theme' && args.screenId && args.screenId !== 'all' && /\b(everything|every screen|all( the| of the)? screens|all of (it|them)|whole (app|canvas|file|flow)|across the board)\b/i.test(this.turnRequest)) {
 			args = { ...args, screenId: 'all' }
 		}
+		// A critique leaves 3-5 notes: the most important ones.
+		if (name === 'add_comment' && this.turnAudit && this.turnComments.length >= 5) {
+			return { ok: false, error: 'This critique already has 5 notes; keep to those (no more add_comment).' }
+		}
 		const confirm = this.guard(name, args)
 		if (process.env.AGENT_DEBUG) console.log(`[agent] ${name} (${call.function.arguments.length} chars) ${JSON.stringify(args).slice(0, 300)}${confirm ? ' (needs confirmation)' : ''}`)
 		const result = await this.callClient(driver, name, args, this.abort?.signal, confirm)
 		if (process.env.AGENT_DEBUG && (!result.ok || (result.data as any)?.warnings)) console.log(`[agent] ${name} -> ${result.ok ? JSON.stringify((result.data as any).warnings) : result.error}`)
+		if (result.ok && CHANGING_TOOLS.has(name)) this.turnChanged = true
+		if (name === 'add_comment' && result.ok) this.turnComments.push(this.screenOf(String(args.targetShapeId ?? '')) ?? '')
 		if (name === 'focus_view' && result.ok && args.scope === 'everyone') {
 			this.broadcast({ type: 'focus', shapeIds: args.shapeIds ?? [], zoomLevel: args.zoomLevel }, driver.ws)
 		}
 		return result
+	}
+
+	/** The screen (top-level ui shape) a node belongs to, from the server's copy of the shapes. */
+	private screenOf(id: string): string | null {
+		let cur = this.room.shapes.get(id.startsWith('shape:') ? id : `shape:${id}`) as any
+		let screen: string | null = null
+		for (let i = 0; cur && i < 50; i++) {
+			if (cur.type === 'ui' && cur.props?.kind === 'screen') screen = stripId(cur.id)
+			cur = this.room.shapes.get(cur.parentId)
+		}
+		return screen
+	}
+
+	/** What the server knows about the canvas: screens with their theme (for vetting questions). */
+	canvasFacts(): CanvasFacts {
+		const screens: CanvasFacts['screens'] = []
+		for (const s of this.room.shapes.values() as Iterable<any>) {
+			if (s.type !== 'ui' || s.props?.kind !== 'screen' || s.meta?.skeleton || !String(s.parentId).startsWith('page:')) continue
+			screens.push({ id: stripId(s.id), name: String(s.props.name || stripId(s.id)), x: s.x, mode: s.meta?.theme?.mode === 'dark' ? 'dark' : 'light', primary: String(s.meta?.theme?.primary ?? '') })
+		}
+		screens.sort((a, b) => a.x - b.x)
+		return { screens }
+	}
+
+	/**
+	 * The steering question that actually plays: the model's, unless it is a copy or
+	 * number tweak, asks for something already true on the canvas, or repeats an earlier
+	 * one; then the next meaningful product step (another screen in the flow, a state, a
+	 * light/dark pair). Critique offers ("Want me to fix...?") are only deduped.
+	 */
+	private async vetQuestion(question: string, review: boolean, debug: (m: string) => void): Promise<string | null> {
+		const repeat = this.askedQuestions.some((q) => sameQuestion(question, q))
+		if (review) return repeat ? null : question
+		// Give the canvas sync a moment to deliver the step's last edits to the server's copy.
+		await new Promise((r) => setTimeout(r, 150))
+		const facts = this.canvasFacts()
+		const problem = repeat ? 'repeats an earlier question' : questionProblem(question, facts)
+		if (!problem) return question
+		const next = nextStepQuestion(facts, [...this.askedQuestions, question])
+		debug(`question replaced (${problem}): "${question}" -> ${next ? `"${next}"` : 'nothing'}`)
+		if (process.env.AGENT_DEBUG) console.log(`[agent] question replaced (${problem}): "${question}" -> "${next}"`)
+		return next
+	}
+
+	/** Critique fallback: one note per audited screen the model left without one (at most 5 notes in all). */
+	private async coverAuditedScreens(driver: Client, to: string, signal: AbortSignal) {
+		const byScreen = new Map<string, AuditIssue>()
+		const rank: Record<string, number> = { overflow: 0, clipped: 1, contrast: 2, touch: 3, small_text: 4, spacing: 5 }
+		for (const i of this.turnAudit ?? []) {
+			if (!i.say) continue
+			const cur = byScreen.get(i.screen)
+			if (!cur || rank[i.kind] < rank[cur.kind]) byScreen.set(i.screen, i)
+		}
+		for (const [screen, issue] of byScreen) {
+			if (this.turnComments.includes(screen) || this.turnComments.length >= 5 || signal.aborted) continue
+			const hl = await this.callClient(driver, 'highlight_shapes', { id: `hl_audit_${screen}`, shapeIds: [issue.id], color: 'red' }, signal)
+			const res = await this.callClient(driver, 'add_comment', { id: `c_audit_${screen}`, kind: 'issue', text: issue.say, targetShapeId: issue.id, ...(to ? { addressedTo: to } : {}) }, signal)
+			if (res.ok) this.turnComments.push(screen)
+			if (process.env.AGENT_DEBUG) console.log(`[agent] audit note on ${screen}: ${issue.say} (${hl.ok && res.ok ? 'ok' : res.error})`)
+		}
 	}
 
 	/**
@@ -703,7 +808,7 @@ export function isQuickEdit(text: string, hasScreens: boolean): boolean {
 /** The measured-issues paragraph a critique turn starts with. */
 export function auditNote(audit: AuditIssue[]): string {
 	return audit.length
-		? `MEASURED ISSUES (from real bounds and rendered colors; "audit" in the state): ${audit.map((i) => `[${i.kind}] ${i.detail} (screen ${i.screen})`).join('; ')}. These are the ONLY overflow, clipping, overlap, contrast, tap-target, text-size or alignment problems that exist: never claim one that is not listed.`
+		? `MEASURED ISSUES (from real bounds and rendered colors; "audit" in the state): ${audit.map((i) => `[${i.kind}] ${i.detail} (screen ${i.screen})`).join('; ')}. These are the ONLY overflow, clipping, overlap, contrast, tap-target, text-size or alignment problems that exist: never claim one that is not listed. Each of these screens gets an issue note on its listed node: ${[...new Set(audit.map((i) => i.screen))].join(', ')}.`
 		: `MEASURED ISSUES: none. Every node fits inside its frame and screen, no text is clipped, text contrast passes 4.5:1, phone tap targets are 44px+, no text is under 12px, card rows share heights. So never claim overflow, clipping, overlap, contrast, tap-target, text-size or alignment problems: critique hierarchy, copy, content, density and flow instead.`
 }
 
@@ -752,6 +857,102 @@ export function isCritiqueRequest(text: string): boolean {
 /** Drops claims the canvas can't back up ("a live chart", "real-time updates"): designs are static. */
 export function honestSpeech(sentence: string): string {
 	return sentence.replace(/\b(live|real-time|realtime|animated|interactive)\s+(?=[a-z])/gi, '').replace(/\s+that updates? (every|in) (real[- ]?time|(a |one )?(second|minute|day)s?)/gi, '')
+}
+
+/** Tools that change the design (a turn that ran one gets a steering question). */
+const CHANGING_TOOLS = new Set(['create_screen', 'add_nodes', 'update_node', 'move_node', 'delete_nodes', 'duplicate_screen', 'set_theme', 'connect_screens'])
+
+export type CanvasFacts = { screens: { id: string; name: string; x: number; mode: 'light' | 'dark'; primary: string }[] }
+
+const COLOR_FAMILIES: Record<string, string> = {
+	green: 'green', emerald: 'green', mint: 'green', sage: 'green', olive: 'green', lime: 'green', forest: 'green',
+	teal: 'teal', turquoise: 'teal', cyan: 'teal', aqua: 'teal',
+	blue: 'blue', navy: 'blue', sky: 'blue', cobalt: 'blue', azure: 'blue',
+	indigo: 'purple', violet: 'purple', purple: 'purple', lavender: 'purple', plum: 'purple',
+	pink: 'pink', magenta: 'pink', rose: 'pink', fuchsia: 'pink',
+	red: 'red', crimson: 'red', maroon: 'red', coral: 'orange', orange: 'orange', amber: 'orange', peach: 'orange',
+	yellow: 'yellow', gold: 'yellow', golden: 'yellow', brown: 'brown', coffee: 'brown', chocolate: 'brown', tan: 'brown',
+}
+
+/** Color family of a hex brand color ("#16a34a" -> green). */
+export function colorFamily(hex: string): string | null {
+	const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim())
+	if (!m) return null
+	const n = parseInt(m[1], 16)
+	const [r, g, b] = [(n >> 16) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255]
+	const max = Math.max(r, g, b)
+	const min = Math.min(r, g, b)
+	const l = (max + min) / 2
+	if (max - min < 0.08) return null
+	const d = max - min
+	let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+	h = (h * 60 + 360) % 360
+	if (h >= 15 && h < 45 && l < 0.4) return 'brown'
+	if (h < 15 || h >= 345) return 'red'
+	if (h < 45) return 'orange'
+	if (h < 70) return 'yellow'
+	if (h < 165) return 'green'
+	if (h < 195) return 'teal'
+	if (h < 250) return 'blue'
+	if (h < 290) return 'purple'
+	return 'pink'
+}
+
+/**
+ * Why a steering question isn't worth asking, or null when it is: a copy or number
+ * tweak ("headline to read X instead of Y", "set for 7:00 AM", "eight months or twelve")
+ * or something already true on the canvas ("stay highlighted in the new green", a color
+ * the brand already is, a mode every screen is already in).
+ */
+export function questionProblem(question: string, facts: CanvasFacts): string | null {
+	const q = question.toLowerCase()
+	if (/["“”]/.test(question) || /\b(read|reads|say|says|wording|reword|rename|retitle|relabel)\b/.test(q)) return 'copy tweak'
+	if (/\b\d{1,2}(:\d{2})?\s?(am|pm)\b|\b\d{1,2}:\d{2}\b/.test(q)) return 'time tweak'
+	if (/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+(months?|weeks?|days?|years?|quarters?)\b/.test(q)) return 'range tweak'
+	if (/\b(stay|stays|keep|keeps|kept|remain|remains|still)\b/.test(q)) return 'asks to keep what is already there'
+	const screens = facts.screens
+	if (screens.length) {
+		const families = new Set(screens.map((s) => colorFamily(s.primary)).filter(Boolean))
+		for (const w of q.match(/\b[a-z]+\b/g) ?? []) {
+			const fam = COLOR_FAMILIES[w]
+			if (fam && families.has(fam)) return `the brand is already ${w}`
+		}
+		if (/\bdark\b/.test(q) && !/\blight\b/.test(q) && screens.every((s) => s.mode === 'dark')) return 'already dark'
+		if (/\blight (mode|theme)\b/.test(q) && !/\bdark\b/.test(q) && screens.every((s) => s.mode === 'light')) return 'already light'
+	}
+	return null
+}
+
+const NEXT_STEPS: Record<string, string[]> = {
+	login: ['Want a sign-up screen next, linked from the create-account link?', 'Want an error state for a wrong password on the log-in screen?'],
+	onboarding: ['Want the sign-up screen that Continue leads to, linked up?', 'Want the next onboarding step, with its own artwork and copy?'],
+	settings: ['Want an edit-profile screen, linked from the profile card?', 'Want a confirmation sheet for Log out?'],
+	dashboard: ['Want an empty state for the dashboard, before any transactions come in?', 'Want a transaction detail screen, linked from the table?', 'Want a loading state for the dashboard cards?'],
+	landing: ['Want a pricing page, linked from the nav?', 'Want a sign-up page for the main call to action?'],
+	list: ['Want a detail screen for the first item, linked from its row?', 'Want an empty state for when the list has nothing in it yet?'],
+}
+
+/** The next meaningful product step to offer: another screen in the flow, a state, or a light/dark pair, never one already asked or built. */
+export function nextStepQuestion(facts: CanvasFacts, asked: string[]): string | null {
+	const screens = [...facts.screens].sort((a, b) => b.x - a.x)
+	if (!screens.length) return null
+	const names = screens.map((s) => s.name.toLowerCase()).join(' | ')
+	const built = (q: string) =>
+		(/sign-up/.test(q) && /sign ?-?up|register|create account/.test(names)) ||
+		(/pricing/.test(q) && /pricing/.test(names)) ||
+		(/edit-profile/.test(q) && /profile/.test(names)) ||
+		(/detail screen/.test(q) && /detail/.test(names)) ||
+		(/empty state/.test(q) && /empty/.test(names)) ||
+		(/onboarding step/.test(q) && screens.filter((s) => /onboarding|welcome/.test(s.name.toLowerCase())).length > 1)
+	const candidates: string[] = []
+	const kindOf = (name: string) => classifyScreenRequest(name).kind
+	const latest = screens[0]
+	candidates.push(...(NEXT_STEPS[kindOf(latest.name)] ?? []))
+	const label = latest.name.length <= 24 ? latest.name : 'latest screen'
+	if (screens.every((s) => s.mode === 'dark')) candidates.push(`Want a light version of the ${label} beside it, to compare?`)
+	else if (screens.every((s) => s.mode === 'light')) candidates.push(`Want a dark-mode copy of the ${label} beside it, to compare?`)
+	for (const s of screens.slice(1)) candidates.push(...(NEXT_STEPS[kindOf(s.name)] ?? []))
+	return candidates.find((c) => !built(c) && !asked.some((a) => sameQuestion(a, c))) ?? null
 }
 
 /** Tools that only read: the model needs another step to use what they return. */

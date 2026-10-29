@@ -98,8 +98,8 @@ step(`agent built the login screen; both see it and its layers; agent cursor hid
 
 // ------------------------------------------------------------------ turn 2: restyle
 await ask('make the button green')
-await onBoth(() => window.__editor.getShape('shape:login_primary_btn')?.props.fill === '#16a34a', null, 'green primary button')
-step('turn 2: "make the button green" → login_primary_btn fill #16a34a on both')
+await onBoth(() => window.__editor.getShape('shape:login_primary_btn')?.props.fill === '#15803d', null, 'green primary button')
+step('turn 2: "make the button green" → login_primary_btn fill #15803d on both')
 
 // ------------------------------------------------------------------ turn 3: add a component
 await ask('add a toggle')

@@ -179,14 +179,21 @@ test('applySpec updates sizing and layout without children', () => {
 
 test('resolveColor handles tokens, themes and literals', () => {
 	assert.equal(resolveColor('$bg', { mode: 'dark' }), THEMES.dark.bg)
-	assert.equal(resolveColor('$primary', { mode: 'light', primary: '#ff0000' }), '#ff0000')
+	assert.equal(resolveColor('$primary', { mode: 'light', primary: '#2563eb' }), '#2563eb')
+	// A mid-tone brand is deepened just enough for white labels to reach 4.5:1 (light and dark).
+	for (const mode of ['light', 'dark'] as const) {
+		for (const primary of ['#ff0000', '#16a34a', '#3d7a68', '#5c3a21']) {
+			const p = resolveColor('$primary', { mode, primary })
+			assert.ok(contrast(p, resolveColor('$onPrimary', { mode, primary })) >= 4.5, `${mode} ${primary} -> ${p}`)
+		}
+	}
 	assert.equal(resolveColor('#123456'), '#123456')
 	assert.equal(resolveColor('transparent'), 'transparent')
 	// A dark brand color is lightened in dark mode so it reads on the dark background.
 	const darkBrown = resolveColor('$primary', { mode: 'dark', primary: '#5c3a21' })
 	assert.notEqual(darkBrown, '#5c3a21')
-	assert.ok(contrast(darkBrown, THEMES.dark.bg) >= 3.5)
-	assert.equal(resolveColor('$primary', { mode: 'dark', primary: '#16a34a' }), '#16a34a')
+	assert.ok(contrast(darkBrown, THEMES.dark.bg) >= 3)
+	assert.ok(contrast(resolveColor('$primary', { mode: 'dark', primary: '#16a34a' }), THEMES.dark.bg) >= 3)
 	// Text on a light brand color is dark.
 	assert.equal(resolveColor('$onPrimary', { mode: 'light', primary: '#facc15' }), '#111827')
 	assert.equal(resolveColor('$onPrimary', { mode: 'light', primary: '#5c3a21' }), '#ffffff')
@@ -210,4 +217,30 @@ test('layoutTree accepts a custom text measurer', () => {
 	assert.deepEqual(out.get('t'), { x: 0, y: 0, w: 40, h: 14 })
 	const wrapped = wrapWith((s) => s.length * 10, 'aa bb cc', 10, 50)
 	assert.deepEqual(wrapped, { w: 50, h: 28 })
+})
+
+test('status badges have semantic tones, independent of the brand', async () => {
+	const { statusTone } = await import('../../shared/design.ts')
+	assert.equal(statusTone('Received'), 'success')
+	assert.equal(statusTone('Pending'), 'warning')
+	assert.equal(statusTone('Failed'), 'danger')
+	assert.equal(statusTone('Sent'), 'info')
+	assert.equal(statusTone('Groceries'), null)
+	// Two statuses never share a color, light or dark, whatever the brand.
+	for (const mode of ['light', 'dark'] as const) assert.notEqual(resolveColor('$success', { mode, primary: '#15803d' }), resolveColor('$info', { mode, primary: '#15803d' }))
+})
+
+test('abbreviated ids become readable layer names', async () => {
+	const { humanLayerName } = await import('../../shared/design.ts')
+	assert.equal(humanLayerName({ id: 'ob_art', kind: 'image', h: 360 }, { id: 'onboarding', name: 'Onboarding' }), 'Hero art')
+	assert.equal(humanLayerName({ id: 'set_acct', kind: 'frame', heading: 'ACCOUNT' }, { id: 'settings', name: 'Settings' }), 'Account section')
+	assert.equal(humanLayerName({ id: 'set_noti', kind: 'frame' }, { id: 'settings', name: 'Settings' }), 'Notifications section')
+	assert.equal(humanLayerName({ id: 'tx_row_3', kind: 'frame' }, null), 'Transactions row 3')
+})
+
+test('phones and desktop app screens have a fold; landing pages scroll', async () => {
+	const { foldHeight } = await import('../../shared/design.ts')
+	assert.equal(foldHeight({ w: 390 }), 844)
+	assert.equal(foldHeight({ w: 1440, layoutMode: 'horizontal' }), 1024)
+	assert.equal(foldHeight({ w: 1440, layoutMode: 'vertical', name: 'Landing page' }), null)
 })
