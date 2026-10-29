@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from 'tldraw'
-import type { ClientMessage, Participant, ReviewMode, ServerMessage } from '../../../shared/protocol.ts'
+import { AGENT_NAME, type ClientMessage, type Participant, type ReviewMode, type ServerMessage } from '../../../shared/protocol.ts'
 import type { Identity } from '../identity.ts'
 import { CanvasExecutor } from './executor.ts'
 import { onAudioBlocked, onSpeakingChange, speak, stopSpeaking } from './speech.ts'
@@ -91,7 +91,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					setState((s) => ({ ...s, busy: msg.busy, activity: msg.activity }))
 					break
 				case 'agent_say':
-					if (!msg.ephemeral) addLog({ from: 'Professor Grok', text: msg.text, kind: 'agent' })
+					if (!msg.ephemeral) addLog({ from: AGENT_NAME, text: msg.text, kind: 'agent' })
 					speak(
 						msg.text,
 						() => {
@@ -117,7 +117,7 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					break
 				case 'tool_call': {
 					if (msg.confirm && !(await confirm(msg.confirm.message))) {
-						send({ type: 'tool_result', callId: msg.callId, result: { ok: false, error: 'The student declined this change. Annotate next to their work instead.' } })
+						send({ type: 'tool_result', callId: msg.callId, result: { ok: false, error: 'The user declined this change. Leave their nodes as they are, or ask first.' } })
 						break
 					}
 					const result = await executor.run(msg.name, msg.args)

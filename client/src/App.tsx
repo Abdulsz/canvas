@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Board } from './Board.tsx'
+import { AGENT_NAME } from '../../shared/protocol.ts'
 import { Orb } from './components/AgentPanel.tsx'
 import { getRoomId, loadIdentity, saveIdentity, type Identity } from './identity.ts'
 
@@ -27,9 +28,9 @@ export function App() {
 					<div className="mx-auto w-fit">
 						<Orb state="idle" size={64} />
 					</div>
-					<h1 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.03em] text-[var(--label)]">Learn together.</h1>
+					<h1 className="mt-6 text-[28px] font-semibold leading-tight tracking-[-0.03em] text-[var(--label)]">Design out loud.</h1>
 					<p className="mx-auto mt-2 max-w-[280px] text-[15px] leading-snug text-[var(--label-2)]">
-						Draw alongside Professor Grok and your classmates on a shared whiteboard.
+						Describe screens and {AGENT_NAME} builds them with you, live, on a shared canvas.
 					</p>
 					<input
 						autoFocus

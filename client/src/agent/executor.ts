@@ -29,6 +29,7 @@ import {
 } from '../../../shared/design.ts'
 import { AGENT_NAME, type Author, type ToolResult } from '../../../shared/protocol.ts'
 import { measureTextDom } from '../design/measure.ts'
+import { readUiTree, uiChildren, uiMeta } from '../design/tree.ts'
 import type { UiShape } from '../design/UiShapeUtil.tsx'
 import { AGENT_AUTHOR, asAgent, authorOf } from './authorship.ts'
 import { findFreeSpot, nextScreenPosition, unionBounds } from './layout.ts'
@@ -63,6 +64,12 @@ const SPEC_KEYS = [
 export type ExecutorHooks = {
 	/** Where the agent "is" on the canvas, for its presence cursor. */
 	onAgentCursor?: (x: number, y: number) => void
+	/**
+	 * Run edits as the local user instead of the agent (the app shell: Design
+	 * panel, Layers, Insert menu). Shapes are then stamped with the user as
+	 * author/updatedBy by registerAuthorship, and each call is one undo step.
+	 */
+	asUser?: boolean
 }
 
 /**
@@ -79,6 +86,7 @@ export class CanvasExecutor {
 
 	async run(name: string, args: Args): Promise<ToolResult> {
 		try {
+			if (this.hooks.asUser) this.editor.markHistoryStoppingPoint(name)
 			const fn = (this as any)[name] as ((a: Args) => unknown) | undefined
 			if (typeof fn !== 'function' || name === 'run' || name.startsWith('_')) {
 				return { ok: false, error: `Unknown tool ${name}` }
@@ -92,6 +100,11 @@ export class CanvasExecutor {
 	}
 
 	// ------------------------------------------------------------ helpers
+
+	/** Runs an edit as the agent, or as the local user when hooks.asUser is set. */
+	private _act<T>(fn: () => T): T {
+		return this.hooks.asUser ? fn() : asAgent(fn)
+	}
 
 	private _label(shape: TLShape): string {
 		if (isUi(shape)) return shape.props.text || shape.props.name
@@ -166,40 +179,17 @@ export class CanvasExecutor {
 	}
 
 	private _meta(shape: UiShape): UiMeta {
-		const m = shape.meta as Partial<UiMeta>
-		return {
-			...(m as object),
-			sizing: { ...(KIND_DEFAULTS[shape.props.kind]?.sizing ?? { w: 'fixed', h: 'fixed' }), ...(m.sizing ?? {}) },
-			...(m.layout ? { layout: m.layout } : {}),
-		} as UiMeta
+		return uiMeta(shape)
 	}
 
 	/** Children of a ui container in layout order. */
 	private _children(shape: TLShape): UiShape[] {
-		const editor = this.editor
-		return editor
-			.getSortedChildIdsForParent(shape.id)
-			.map((id) => editor.getShape(id))
-			.filter(isUi)
-			.map((s, i) => ({ s, i }))
-			.sort((a, b) => ((a.s.meta?.order as number) ?? a.i) - ((b.s.meta?.order as number) ?? b.i) || a.i - b.i)
-			.map(({ s }) => s)
+		return uiChildren(this.editor, shape)
 	}
 
 	/** Reads a ui subtree from the editor into a resolved tree. */
 	private _toTree(shape: UiShape): UiTreeNode {
-		return {
-			id: bare(shape.id),
-			props: { ...shape.props },
-			meta: this._meta(shape),
-			x: shape.x,
-			y: shape.y,
-			children: this._children(shape).map((c, i) => {
-				const t = this._toTree(c)
-				t.meta.order = i
-				return t
-			}),
-		}
+		return readUiTree(this.editor, shape)
 	}
 
 	/** Re-runs auto layout on a screen/root and writes back the changed boxes. */
@@ -447,7 +437,7 @@ export class CanvasExecutor {
 		const replaceable = new Set(existing ? editor.getShapeAndDescendantIds([existing.id]) : [])
 		const renamedRaw = this._dedupeIds(tree, bare(id), new Set([...replaceable].map(bare)))
 
-		asAgent(() =>
+		this._act(() =>
 			editor.run(() => {
 				if (existing) {
 					editor.deleteShapes(editor.getSortedChildIdsForParent(existing.id))
@@ -498,7 +488,7 @@ export class CanvasExecutor {
 		}
 		const existing = this._children(parent)
 		const index = Number.isInteger(args.index) ? Math.max(0, Math.min(existing.length, args.index)) : existing.length
-		asAgent(() =>
+		this._act(() =>
 			editor.run(() => {
 				for (const t of trees) this._createTree(t, parent.id)
 				const added = trees.map((t) => editor.getShape(toId(t.id)) as UiShape)
@@ -539,7 +529,7 @@ export class CanvasExecutor {
 		const next = applySpec(props, meta, patch)
 		const parent = editor.getShape(shape.parentId as TLShapeId)
 		const free = !isUi(parent) || (this._meta(parent).layout?.mode ?? 'none') === 'none'
-		asAgent(() =>
+		this._act(() =>
 			editor.run(() => {
 				editor.updateShape({
 					id: shape.id,
@@ -565,7 +555,7 @@ export class CanvasExecutor {
 		if (!isContainer(newParent)) throw new Error(`"${args.id}" is not inside a screen or frame; pass parentId.`)
 		if (newParent.id === shape.id || editor.hasAncestor(newParent, shape.id)) throw new Error(`Can't move "${args.id}" into itself.`)
 		const oldRoot = this._layoutRoot(shape)
-		asAgent(() =>
+		this._act(() =>
 			editor.run(() => {
 				if (newParent.id !== shape.parentId) editor.reparentShapes([shape.id], newParent.id)
 				const siblings = this._children(newParent).filter((s) => s.id !== shape.id)
@@ -595,7 +585,7 @@ export class CanvasExecutor {
 		const doomed = new Set(editor.getShapeAndDescendantIds(shapes.map((s) => s.id)))
 		const parents = [...new Set(shapes.map((s) => s.parentId as TLShapeId))]
 		const roots = [...new Set(shapes.map((s) => this._layoutRoot(s)).filter((r): r is UiShape => !!r && !doomed.has(r.id)))]
-		asAgent(() =>
+		this._act(() =>
 			editor.run(() => {
 				this._deleteWithArrows(shapes.map((s) => s.id))
 				for (const p of parents) {
@@ -629,7 +619,7 @@ export class CanvasExecutor {
 		const pos = nextScreenPosition(editor, src.props.w, src.props.h)
 		tree.x = pos.x
 		tree.y = pos.y
-		asAgent(() =>
+		this._act(() =>
 			editor.run(() => {
 				this._createTree(tree, undefined, { theme: src.meta?.theme })
 				this._relayout(editor.getShape(toId(newId)) as UiShape)
@@ -649,7 +639,7 @@ export class CanvasExecutor {
 		if (!screens.length) throw new Error('There are no screens yet. Create one with create_screen.')
 		if (args.mode !== undefined && args.mode !== 'light' && args.mode !== 'dark') throw new Error("mode must be 'light' or 'dark'")
 		if (args.primary !== undefined && !/^#[0-9a-fA-F]{3,8}$/.test(String(args.primary))) throw new Error("primary must be a hex color like '#2563eb'")
-		asAgent(() =>
+		this._act(() =>
 			editor.updateShapes(
 				screens.map((s) => {
 					const prev = { ...DEFAULT_THEME, ...((s.meta?.theme as object) ?? {}) }
@@ -673,7 +663,7 @@ export class CanvasExecutor {
 		const fb = this.editor.getShapePageBounds(from)!
 		const tb = this.editor.getShapePageBounds(to)!
 		const rightward = tb.center.x >= fb.center.x
-		asAgent(() =>
+		this._act(() =>
 			this._arrow(
 				id,
 				from,
@@ -713,7 +703,7 @@ export class CanvasExecutor {
 		} else {
 			shapes = editor.getCurrentPageShapes()
 		}
-		asAgent(() => this._deleteWithArrows(shapes.map((s) => s.id)))
+		this._act(() => this._deleteWithArrows(shapes.map((s) => s.id)))
 		return { deleted: shapes.length }
 	}
 
@@ -801,7 +791,7 @@ export class CanvasExecutor {
 			style === 'underline'
 				? new Box(bounds.x, bounds.maxY + 6, bounds.w, 6)
 				: new Box(bounds.x - pad, bounds.y - pad, bounds.w + pad * 2, bounds.h + pad * 2)
-		asAgent(() => {
+		this._act(() => {
 			if (editor.getShape(id)) editor.deleteShapes([id])
 			editor.createShape({
 				id,
@@ -848,7 +838,7 @@ export class CanvasExecutor {
 		}
 		const text = args.addressedTo ? `@${args.addressedTo} ${args.text ?? ''}` : String(args.text ?? '')
 		const leader = createShapeId(`${bare(id)}_leader`)
-		asAgent(() => {
+		this._act(() => {
 			for (const old of [id, leader]) if (editor.getShape(old)) editor.deleteShapes([old])
 			editor.createShape({
 				id,

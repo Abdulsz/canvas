@@ -49,7 +49,7 @@ export function useLiveVoice(editor: Editor | null, me: Identity, actions: Agent
 			onToolCall: async (name, args) => {
 				const prompt = studentWorkPrompt(editor, name, args)
 				if (prompt && !(await actionsRef.current.confirm(prompt))) {
-					return { ok: false, error: 'The student declined this change. Annotate next to their work instead.' }
+					return { ok: false, error: 'The user declined this change. Leave their nodes as they are, or ask first.' }
 				}
 				if (name === 'look_at_board') return lookAtBoard(executor, args)
 				const result = await executor.run(name, args)
@@ -83,12 +83,12 @@ export function useLiveVoice(editor: Editor | null, me: Identity, actions: Agent
 	const checkWork = useCallback(async () => {
 		if (!editor || !sessionRef.current) return
 		const selection = editor.getSelectedShapeIds()
-		actionsRef.current.log(me.name, '✅ Check my work', 'user')
-		const state = await new CanvasExecutor(editor).run('get_canvas_state', selection.length ? { shapeIds: selection } : { author: 'user' })
+		actionsRef.current.log(me.name, 'Critique my design', 'user')
+		const state = await new CanvasExecutor(editor).run('get_canvas_state', selection.length ? { shapeIds: selection } : {})
 		sessionRef.current.sendText(
-			`${me.name} pressed "Check my work"${selection.length ? ' with some shapes selected (review only those)' : ''}. ` +
-				`Their shapes: ${JSON.stringify(state.data).slice(0, 6000)}. ` +
-				'If any are freehand or unlabeled, call look_at_board first. Give feedback out loud and on the board.'
+			`${me.name} pressed "Critique"${selection.length ? ' with some nodes selected (critique only those)' : ''}. ` +
+				`The design: ${JSON.stringify(state.data).slice(0, 6000)}. ` +
+				'Call look_at_board if you need to see it. Give a short design critique out loud and as comments on the canvas.'
 		)
 	}, [editor, me])
 

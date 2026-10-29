@@ -140,9 +140,12 @@ body {
 	scrollbar-color: var(--fill) transparent;
 }
 
-:focus-visible {
-	outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
-	outline-offset: 2px;
+/* In the base layer so utilities like outline-none can override it. */
+@layer base {
+	:focus-visible {
+		outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+		outline-offset: 2px;
+	}
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -162,14 +165,46 @@ body {
 	--tl-color-selected: #1d1d1f;
 	--tl-color-selected-contrast: #ffffff;
 	--tl-color-focus: rgba(0, 0, 0, 0.35);
-	--tl-color-selection-stroke: #1d1d1f;
-	--tl-color-selection-fill: rgba(29, 29, 31, 0.08);
+	/* Figma-like pasteboard and selection blue. */
+	--tl-color-background: #ebebed;
+	--tl-color-selection-stroke: #0d99ff;
+	--tl-color-selection-fill: rgba(13, 153, 255, 0.14);
 }
 .tl-container.tl-theme__dark {
 	--tl-color-primary: #f5f5f7;
 	--tl-color-selected: #f5f5f7;
 	--tl-color-selected-contrast: #000000;
 	--tl-color-focus: rgba(255, 255, 255, 0.4);
-	--tl-color-selection-stroke: #f5f5f7;
-	--tl-color-selection-fill: rgba(245, 245, 247, 0.12);
+	--tl-color-background: #1c1c1e;
+	--tl-color-selection-stroke: #0d99ff;
+	--tl-color-selection-fill: rgba(13, 153, 255, 0.2);
+}
+
+.hairline-l {
+	box-shadow: inset 0.5px 0 0 var(--separator);
+}
+
+/* Code export syntax colors. */
+.code-view .tok-tag {
+	color: #c2410c;
+}
+.code-view .tok-attr {
+	color: #7c3aed;
+}
+.code-view .tok-str {
+	color: #0f766e;
+}
+.code-view .tok-punct {
+	color: var(--label-3);
+}
+@media (prefers-color-scheme: dark) {
+	.code-view .tok-tag {
+		color: #fb923c;
+	}
+	.code-view .tok-attr {
+		color: #c4b5fd;
+	}
+	.code-view .tok-str {
+		color: #5eead4;
+	}
 }
