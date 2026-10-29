@@ -864,7 +864,11 @@ export class CanvasExecutor {
 			error: 'light-red',
 			hint: 'yellow',
 		}
-		const text = args.addressedTo ? `@${args.addressedTo} ${args.text ?? ''}` : String(args.text ?? '')
+		// Feedback on a collaborator's node is addressed to them even if the model forgot to say so.
+		const targetAuthor = target ? authorOf(target) : null
+		const to = String(args.addressedTo ?? '').replace(/^@/, '').trim() || (targetAuthor?.kind === 'user' ? targetAuthor.name : '')
+		const body = String(args.text ?? '')
+		const text = to && !body.startsWith(`@${to}`) ? `@${to} ${body}` : body
 		const leader = createShapeId(`${bare(id)}_leader`)
 		this._act(() => {
 			for (const old of [id, leader]) if (editor.getShape(old)) editor.deleteShapes([old])

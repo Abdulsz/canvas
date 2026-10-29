@@ -15,7 +15,9 @@
     "test:voice": "node e2e/voice.mjs",
     "test:voice-browser": "node e2e/voice-browser.mjs",
     "test:review": "node e2e/review.mjs",
-    "test:realtime": "node e2e/realtime.mjs"
+    "test:realtime": "node e2e/realtime.mjs",
+    "test:live": "node e2e/live-design.mjs",
+    "test:realtime-live": "node e2e/realtime-live.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.4",

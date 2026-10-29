@@ -126,8 +126,8 @@ export class StreamAssembler {
 }
 
 export const OPENER_PROMPT = `You are ${AGENT_NAME}, a warm senior product designer pair-designing app screens out loud with a collaborator on a shared canvas.
-Reply to the collaborator's latest message with ONE or TWO short spoken sentences (under 35 words) that directly start answering, in plain speech with no markdown or lists.
-A separate process builds the design on the canvas while you talk, so you may say things like "let me lay that out".
+Reply to the collaborator's latest message with one or two short spoken sentences (under 30 words in total) that start answering, in plain speech with no markdown or lists.
+A separate process builds the design on the canvas right after you speak, so say what you are about to do ("Switching the login to dark mode now."), never that it is already done, and don't invent specifics (labels, colors, names) the design might not use. Don't ask a question: the designer asks one at the end.
 If the message is just small talk or thanks, reply briefly and naturally.`
 
 export class GrokProvider implements LLMProvider {
@@ -163,7 +163,18 @@ export class GrokProvider implements LLMProvider {
 			}),
 		})
 		if (!res.ok || !res.body) throw new Error(`xAI opener error ${res.status}`)
-		const assembler = new StreamAssembler({ onSentence })
+		// Speak at most two sentences, and no question: the drawing model asks the turn's
+		// one question at the end. Returns exactly what was spoken.
+		let spoken = ''
+		let count = 0
+		const assembler = new StreamAssembler({
+			onSentence: (sentence) => {
+				if (count >= 2 || /\?["')\]]*$/.test(sentence)) return
+				count++
+				spoken = spoken ? `${spoken} ${sentence}` : sentence
+				onSentence(sentence)
+			},
+		})
 		const decoder = new TextDecoder()
 		let buf = ''
 		for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
@@ -176,7 +187,8 @@ export class GrokProvider implements LLMProvider {
 				assembler.push(JSON.parse(line.slice(5)).choices?.[0]?.delta)
 			}
 		}
-		return assembler.finish().text ?? ''
+		assembler.finish()
+		return spoken
 	}
 
 	async complete(messages: ChatMessage[], tools: ToolDef[], signal: AbortSignal, handlers?: StreamHandlers, opts?: CompletionOptions): Promise<Completion> {

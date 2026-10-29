@@ -9,6 +9,7 @@ import {
 	wrapWith,
 	normalizePadding,
 	resolveColor,
+	contrast,
 	specToTree,
 	THEMES,
 	treeToHtml,
@@ -181,6 +182,14 @@ test('resolveColor handles tokens, themes and literals', () => {
 	assert.equal(resolveColor('$primary', { mode: 'light', primary: '#ff0000' }), '#ff0000')
 	assert.equal(resolveColor('#123456'), '#123456')
 	assert.equal(resolveColor('transparent'), 'transparent')
+	// A dark brand color is lightened in dark mode so it reads on the dark background.
+	const darkBrown = resolveColor('$primary', { mode: 'dark', primary: '#5c3a21' })
+	assert.notEqual(darkBrown, '#5c3a21')
+	assert.ok(contrast(darkBrown, THEMES.dark.bg) >= 3.5)
+	assert.equal(resolveColor('$primary', { mode: 'dark', primary: '#16a34a' }), '#16a34a')
+	// Text on a light brand color is dark.
+	assert.equal(resolveColor('$onPrimary', { mode: 'light', primary: '#facc15' }), '#111827')
+	assert.equal(resolveColor('$onPrimary', { mode: 'light', primary: '#5c3a21' }), '#ffffff')
 })
 
 test('treeToHtml emits a standalone flexbox document', () => {

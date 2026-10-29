@@ -228,10 +228,57 @@ export function resolveColor(value: string | undefined, theme: Partial<ThemeSpec
 	if (!v || v === 'none') return 'transparent'
 	const key = v.startsWith('$') ? v.slice(1) : v
 	if ((TOKENS as readonly string[]).includes(key)) {
-		if (key === 'primary' && theme.primary) return theme.primary
-		return THEMES[theme.mode === 'dark' ? 'dark' : 'light'][key as Token]
+		const mode = theme.mode === 'dark' ? 'dark' : 'light'
+		const primary = themePrimary(theme)
+		if (key === 'primary') return primary
+		// Text on the brand color: white, or near-black when the brand is light (yellow, mint...).
+		if (key === 'onPrimary') return contrast(primary, '#ffffff') >= 3 ? THEMES[mode].onPrimary : '#111827'
+		return THEMES[mode][key as Token]
 	}
 	return v
+}
+
+/**
+ * The $primary color for a theme. In dark mode a dark brand color (coffee brown,
+ * navy) is lightened until it stands out from the background, so buttons and
+ * primary-colored links stay readable after "switch to dark mode".
+ */
+export function themePrimary(theme: Partial<ThemeSpec>): string {
+	const primary = theme.primary || DEFAULT_PRIMARY
+	if (theme.mode !== 'dark' || !parseHex(primary)) return primary
+	let c = primary
+	for (let i = 1; i <= 10 && contrast(c, THEMES.dark.bg) < 3.5; i++) c = mixHex(primary, '#ffffff', i * 0.08)
+	return c
+}
+
+function parseHex(hex: string): [number, number, number] | null {
+	let h = hex.trim().replace(/^#/, '')
+	if (/^[0-9a-f]{3}$/i.test(h)) h = h.replace(/./g, (x) => x + x)
+	if (!/^[0-9a-f]{6}$/i.test(h)) return null
+	const n = parseInt(h, 16)
+	return [n >> 16, (n >> 8) & 255, n & 255]
+}
+
+function mixHex(a: string, b: string, t: number): string {
+	const x = parseHex(a)!
+	const y = parseHex(b)!
+	return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('')
+}
+
+function luminance(hex: string): number {
+	const rgb = parseHex(hex)
+	if (!rgb) return 0.5
+	const [r, g, b] = rgb.map((v) => {
+		const c = v / 255
+		return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+	})
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+/** WCAG contrast ratio of two hex colors. */
+export function contrast(a: string, b: string): number {
+	const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+	return (l1 + 0.05) / (l2 + 0.05)
 }
 
 // Simple 24x24 stroke icons (feather-style paths), rendered by the client and the HTML export.
@@ -273,6 +320,11 @@ export const ICON_PATHS: Record<string, string> = {
 	logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9',
 	chart: 'M18 20V10 M12 20V4 M6 20v-6',
 	bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+	coffee: 'M18 8h1a4 4 0 0 1 0 8h-1 M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z M6 1v3 M10 1v3 M14 1v3',
+	'map-pin': 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z M15 10a3 3 0 1 1-6 0a3 3 0 1 1 6 0z',
+	clock: 'M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0z M12 6v6l4 2',
+	'credit-card': 'M3 4h18a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M1 10h22',
+	gift: 'M20 12v10H4V12 M2 7h20v5H2z M12 22V7 M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z',
 }
 export const ICONS = Object.keys(ICON_PATHS)
 

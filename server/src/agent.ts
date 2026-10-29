@@ -238,7 +238,7 @@ export class AgentSession {
 			const effort: CompletionOptions['reasoningEffort'] =
 				trigger.kind === 'message'
 					? ((process.env.XAI_REASONING_EFFORT as any) ?? 'low')
-					: ((process.env.XAI_REVIEW_REASONING_EFFORT as any) ?? 'medium')
+					: ((process.env.XAI_REVIEW_REASONING_EFFORT as any) ?? 'low')
 			// Fast spoken opener: starts answering ~1s after the question, while the
 			// drawing model (slower, it reasons) prepares the first drawing step.
 			let opener = ''
@@ -260,7 +260,7 @@ export class AgentSession {
 			const triggerMessage = await this.buildTriggerMessage(trigger, driver, abort.signal)
 			const said = [ack, opener.trim()].filter(Boolean).join(' ')
 			const note = opener.trim()
-				? `(You already said this out loud: "${said}". Continue from there: design it step by step and speak only NEW sentences; never repeat what you already said.)`
+				? `(You already said this out loud: "${said}". Never repeat or paraphrase it. Start this step with one short NEW sentence about a specific design choice (it plays while the screen is being built), then the tool calls. Your final reply is just your one question.)`
 				: `(The user just heard you say "${ack}". Now speak your first short sentence while you design; don't repeat "${ack}".)`
 			if (ack && typeof triggerMessage.content === 'string') triggerMessage.content += `\n${note}`
 			else if (ack && Array.isArray(triggerMessage.content)) triggerMessage.content.push({ type: 'text', text: note })
@@ -287,7 +287,7 @@ export class AgentSession {
 						// Each sentence goes to the voice as soon as it streams in; they play in order,
 						// after the previous step's speech.
 						onSentence: (sentence) => {
-							if (/^SILENT\b/.test(sentence)) return
+							if (/^SILENT\b/.test(sentence) || isToolChatter(sentence)) return
 							debug(`sentence: ${sentence.slice(0, 40)}`)
 							const line = this.prepareLine(sentence)
 							lines.push(previous.then(() => (abort.signal.aborted ? undefined : this.say(sentence, driver!, { line }))))
@@ -482,6 +482,7 @@ export class AgentSession {
 		const confirm = this.guard(name, args)
 		if (process.env.AGENT_DEBUG) console.log(`[agent] ${name} ${JSON.stringify(args).slice(0, 300)}${confirm ? ' (needs confirmation)' : ''}`)
 		const result = await this.callClient(driver, name, args, this.abort?.signal, confirm)
+		if (process.env.AGENT_DEBUG && (!result.ok || (result.data as any)?.warnings)) console.log(`[agent] ${name} -> ${result.ok ? JSON.stringify((result.data as any).warnings) : result.error}`)
 		if (name === 'focus_view' && result.ok && args.scope === 'everyone') {
 			this.broadcast({ type: 'focus', shapeIds: args.shapeIds ?? [], zoomLevel: args.zoomLevel }, driver.ws)
 		}
@@ -545,6 +546,11 @@ export class AgentSession {
 			this.send(driver.ws, { type: 'tool_call', callId, name, args, ...(confirm ? { confirm } : {}) })
 		})
 	}
+}
+
+/** Tool-call chatter the model sometimes leaks into its text ("55.0 is not a valid tool."): never speak it. */
+export function isToolChatter(sentence: string): boolean {
+	return /\b(not a valid tool|tool_calls?|function call|invalid arguments?)\b|^[{[]|"\w+"\s*:/i.test(sentence)
 }
 
 /** A short spoken line describing what a silent design step added ("Here's the Login screen."). */
