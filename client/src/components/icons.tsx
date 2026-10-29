@@ -81,3 +81,27 @@ export const ArrowRightIcon = ico('M2.5 8h11 M9.5 4l4 4-4 4')
 export const FileIcon = ico('M4 1.5h5l3.5 3.5v9a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5V2a.5.5 0 0 1 .5-.5z M9 1.5V5h3.5')
 export const GridIcon = ico('M2.5 2.5h4.5v4.5H2.5z M9 2.5h4.5v4.5H9z M9 9h4.5v4.5H9z M2.5 9h4.5v4.5H2.5z')
 export const BrowserIcon = ico('M2.5 2.5h11a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z M1.5 5.5h13')
+
+/** The selected screen's theme: a device outline with a sun (light) or a moon (dark) inside. */
+export const ScreenThemeIcon = ({ className, dark }: P & { dark?: boolean }) => (
+	<svg viewBox="0 0 16 16" className={className} {...thin}>
+		<path d="M4.25 1.25h7.5a1 1 0 0 1 1 1v11.5a1 1 0 0 1-1 1h-7.5a1 1 0 0 1-1-1V2.25a1 1 0 0 1 1-1z" />
+		{dark ? (
+			<path d="M10.1 8.9A2.6 2.6 0 0 1 7.1 5.9a2.6 2.6 0 1 0 3 3z" fill="currentColor" strokeWidth={1} />
+		) : (
+			<path d="M9.25 7.5a1.25 1.25 0 1 1-2.5 0a1.25 1.25 0 1 1 2.5 0z M8 4.6v.4 M8 10v.4 M5.1 7.5h.4 M10.5 7.5h.4" />
+		)}
+		<path d="M7 12.5h2" />
+	</svg>
+)
+
+// Layer roles: frames read by what they are (header, nav, form, list, card, footer) or how they lay out.
+export const RoleHeaderIcon = ico('M2.5 2.5h11v11h-11z M2.5 6h11 M4.5 4.25h3')
+export const RoleFooterIcon = ico('M2.5 2.5h11v11h-11z M2.5 10h11 M4.5 11.75h3')
+export const RoleNavIcon = ico('M2.5 2.5h11v11h-11z M6.5 2.5v11 M3.75 5h1.5 M3.75 7.5h1.5')
+export const RoleFormIcon = ico('M2.5 2h11v3.5h-11z M2.5 7.25h11v3.5h-11z M2.5 13.5h6')
+export const RoleListIcon = ico('M6 4h7.5 M6 8h7.5 M6 12h7.5 M2.75 4h.5 M2.75 8h.5 M2.75 12h.5')
+export const RoleCardIcon = ico('M3 2.5h10a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1z M2 7h12 M4.5 10h4')
+export const RoleStackIcon = ico('M3 2.5h10v4.5H3z M3 9h10v4.5H3z')
+export const RoleRowIcon = ico('M2.5 3h4.5v10H2.5z M9 3h4.5v10H9z')
+export const RoleButtonsIcon = ico('M1.5 5.5h6v5h-6z M8.5 5.5h6v5h-6z')

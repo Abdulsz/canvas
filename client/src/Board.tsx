@@ -28,7 +28,7 @@ import { useVoice } from './agent/useVoice.ts'
 import { AgentPanel, ConfirmDialog, Orb } from './components/AgentPanel.tsx'
 import { EmptyCanvas } from './shell/EmptyCanvas.tsx'
 import { customShapeUtils, syncShapeUtils } from './design/shapes.ts'
-import { isUi } from './design/tree.ts'
+import { isScreen, isUi, screenOf, screenTheme, uiChildren } from './design/tree.ts'
 import type { Identity } from './identity.ts'
 import { CodeModal } from './shell/CodeModal.tsx'
 import { DesignPanel } from './shell/DesignPanel.tsx'
@@ -107,6 +107,75 @@ function AgentCursor() {
 	)
 }
 
+/**
+ * A light sweep over a skeleton screen while the agent writes its real
+ * content (the skeleton can sit there for several seconds), so it reads as
+ * "in progress" rather than as a finished gray wireframe.
+ */
+function SkeletonShimmer() {
+	const editor = useEditor()
+	const box = useValue(
+		'skeleton shimmer',
+		() => {
+			const sk = editor.getCurrentPageShapes().find((s) => isScreen(s) && s.meta?.skeleton)
+			if (!sk || !isUi(sk)) return null
+			const b = editor.getShapePageBounds(sk)
+			if (!b) return null
+			editor.getCamera()
+			const tl = editor.pageToViewport({ x: b.x, y: b.y })
+			const z = editor.getZoomLevel()
+			return { x: tl.x, y: tl.y, w: b.w * z, h: b.h * z, r: (sk.props.radius || 0) * z, dark: screenTheme(sk).mode === 'dark' }
+		},
+		[editor]
+	)
+	if (!box) return null
+	return <div className="skeleton-shimmer" data-testid="skeleton-shimmer" data-dark={box.dark} style={{ left: box.x, top: box.y, width: box.w, height: box.h, borderRadius: box.r }} aria-hidden />
+}
+
+function CanvasOverlays() {
+	return (
+		<>
+			<SkeletonShimmer />
+			<AgentCursor />
+		</>
+	)
+}
+
+export type BuildProgress = { name: string; skeleton: boolean; sections: number; layers: number }
+
+/**
+ * What the agent is building during a turn, for the voice dock: the skeleton
+ * it put down, then the screen gaining the most new layers since the turn
+ * started (its top-level sections and total layers). Null for edits.
+ */
+function useBuildProgress(editor: Editor | null, busy: boolean): BuildProgress | null {
+	const [baseline, setBaseline] = useState<Set<string> | null>(null)
+	useEffect(() => {
+		setBaseline(busy && editor ? new Set(editor.getCurrentPageShapes().map((s) => s.id)) : null)
+	}, [busy, editor])
+	return useValue(
+		'build progress',
+		() => {
+			if (!editor || !busy) return null
+			const shapes = editor.getCurrentPageShapes()
+			const sk = shapes.find((s) => isScreen(s) && s.meta?.skeleton)
+			if (sk && isUi(sk)) return { name: sk.props.name || 'screen', skeleton: true, sections: 0, layers: 0 }
+			if (!baseline) return null
+			const counts = new Map<TLShapeId, number>()
+			for (const s of shapes) {
+				if (baseline.has(s.id) || !isUi(s)) continue
+				const scr = screenOf(editor, s)
+				if (scr) counts.set(scr.id, (counts.get(scr.id) ?? 0) + 1)
+			}
+			const top = [...counts].sort((a, b) => b[1] - a[1])[0]
+			const screen = top && editor.getShape(top[0])
+			if (!screen || !isUi(screen)) return null
+			return { name: screen.props.name || 'screen', skeleton: false, sections: uiChildren(editor, screen).length, layers: editor.getShapeAndDescendantIds([screen.id]).size - 1 }
+		},
+		[editor, busy, baseline]
+	)
+}
+
 // tldraw's style panel only for sketches/annotations: the Design tab edits 'ui' shapes.
 function ContextualStylePanel(props: TLUiStylePanelProps) {
 	const editor = useEditor()
@@ -122,7 +191,7 @@ function ContextualStylePanel(props: TLUiStylePanelProps) {
 	return show ? <DefaultStylePanel {...props} /> : null
 }
 
-const components: TLComponents = { InFrontOfTheCanvas: AgentCursor, StylePanel: ContextualStylePanel, PageMenu: null,
+const components: TLComponents = { InFrontOfTheCanvas: CanvasOverlays, StylePanel: ContextualStylePanel, PageMenu: null,
 	// The floating voice dock sits where tldraw puts these on narrow canvases; undo/delete/duplicate stay on keys, the context menu and the main menu.
 	QuickActions: null,
 	ActionsMenu: null,
@@ -237,6 +306,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 	const [codeFor, setCodeFor] = useState<TLShapeId | null>(null)
 	const [layersOpen, setLayersOpen] = useState(false)
 	const agentActive = agent.state.busy || agent.state.speaking || voice.live.active
+	const build = useBuildProgress(editor, agent.state.busy)
 
 	// On phones the layers drawer closes once something is picked.
 	const selectionKey = useValue('selection key', () => editor?.getSelectedShapeIds().join(',') ?? '', [editor])
@@ -302,7 +372,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 						/>
 					</AgentCursorContext.Provider>
 					<EmptyCanvas editor={editor} exec={userExec} voice={voice} connected={agent.state.connected} busy={agent.state.busy} />
-					<VoiceDock state={agent.state} voice={voice} onOpenAgent={() => setTab('agent')} onStop={agent.actions.stop} />
+					<VoiceDock state={agent.state} voice={voice} build={build} onOpenAgent={() => setTab('agent')} onStop={agent.actions.stop} />
 				</div>
 
 				{/* Right: Design | Agent. On phones, a bottom sheet with a grab handle. */}

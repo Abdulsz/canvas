@@ -4,6 +4,7 @@ import type { AgentState } from '../agent/useAgent.ts'
 import type { Voice } from '../agent/useVoice.ts'
 import { Orb } from '../components/AgentPanel.tsx'
 import { MicIcon, StopIcon } from '../components/icons.tsx'
+import type { BuildProgress } from '../Board.tsx'
 
 /** What the dock is showing, from the most to the least urgent. */
 export type DockPhase = 'speaking' | 'thinking' | 'hearing' | 'listening' | 'idle' | 'offline'
@@ -45,7 +46,12 @@ function Meter({ phase, level }: { phase: DockPhase; level: number }) {
  * state, what it is saying or doing, an audio meter) and the mic, which drives
  * the same hands-free conversation as the Agent tab's mic.
  */
-export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentState; voice: Voice; onOpenAgent: () => void; onStop: () => void }) {
+export function VoiceDock({ state, voice, build, onOpenAgent, onStop }: { state: AgentState; voice: Voice; build?: BuildProgress | null; onOpenAgent: () => void; onStop: () => void }) {
+	const buildText = build
+		? build.skeleton
+			? `Laying out ${build.name}…`
+			: `Building ${build.name} · ${build.sections} ${build.sections === 1 ? 'section' : 'sections'} · ${build.layers} layers`
+		: null
 	const lastAgent = [...state.log].reverse().find((e) => e.kind === 'agent')
 	// Subtitles: the agent's latest line stays up while it speaks and a few seconds after.
 	const [fresh, setFresh] = useState<number | null>(null)
@@ -60,7 +66,7 @@ export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentS
 		: lastAgent && (state.speaking || fresh === lastAgent.id)
 			? lastAgent.text
 			: state.busy
-				? voice.status
+				? (buildText ?? voice.status)
 				: voice.listenState === 'hearing'
 					? 'Hearing you…'
 					: voice.listenState === 'transcribing'
@@ -92,10 +98,19 @@ export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentS
 				</button>
 				{active ? (
 					<button className="fade-up flex min-h-11 min-w-0 max-w-[420px] flex-col items-start justify-center text-left" onClick={onOpenAgent}>
-						<span className="voice-phase flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.06em]">{PHASE_LABEL[phase]}</span>
+						<span className="flex min-w-0 max-w-full items-center gap-1.5 text-[12px]">
+							<span className="voice-phase shrink-0 font-semibold uppercase tracking-[0.06em]">{build && phase === 'thinking' ? (build.skeleton ? 'Sketching' : 'Building') : PHASE_LABEL[phase]}</span>
+							{/* While the agent talks, the build progress stays visible next to the phase. */}
+							{build && caption !== buildText && (
+								<span className="truncate font-medium text-[var(--label-2)]" data-testid="build-progress">
+									· {build.skeleton ? `laying out ${build.name}` : `${build.name}: ${build.sections} ${build.sections === 1 ? 'section' : 'sections'}`}
+								</span>
+							)}
+						</span>
 						<span
 							className={`line-clamp-2 text-[13px] leading-[1.35] text-[var(--label)] md:text-[14px] ${phase === 'thinking' ? 'shimmer-text' : ''}`}
 							data-testid="voice-caption"
+							data-build={caption === buildText || undefined}
 							aria-live="polite"
 							title={caption ?? undefined}
 						>
@@ -109,6 +124,7 @@ export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentS
 					</button>
 				)}
 				{phase !== 'idle' && phase !== 'offline' && <Meter phase={phase} level={voice.level} />}
+				{build && <span className="build-bar" role="progressbar" aria-label={buildText ?? 'Building'} />}
 				{state.busy && (
 					<button
 						className="tap pop flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--fill)] text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill-strong)] active:scale-95"

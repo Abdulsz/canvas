@@ -15,7 +15,16 @@ const TEXT_KINDS = new Set(['text', 'button', 'input', 'checkbox', 'avatar'])
 const TEXT_COLOR_KINDS = new Set(['text', 'button', 'input', 'checkbox', 'avatar', 'icon', 'image'])
 const ICON_KINDS = new Set(['icon', 'button', 'input', 'avatar', 'image'])
 const CONTENT_LABEL: Record<string, string> = { text: 'Text', button: 'Label', input: 'Placeholder', checkbox: 'Label', avatar: 'Name', image: 'Caption', badge: 'Label' }
-const PRIMARY_PRESETS = ['#5b5bd6', '#2563eb', '#0d9488', '#16a34a', '#ea580c', '#e11d48', '#9333ea', '#111827']
+const PRIMARY_PRESETS = [
+	{ hex: '#5b5bd6', name: 'Indigo' },
+	{ hex: '#2563eb', name: 'Blue' },
+	{ hex: '#0d9488', name: 'Teal' },
+	{ hex: '#16a34a', name: 'Green' },
+	{ hex: '#ea580c', name: 'Orange' },
+	{ hex: '#e11d48', name: 'Rose' },
+	{ hex: '#9333ea', name: 'Purple' },
+	{ hex: '#111827', name: 'Ink' },
+]
 
 type Props = {
 	editor: Editor | null
@@ -229,22 +238,30 @@ function NodeProperties({ editor, exec, shape, onOpenCode }: { editor: Editor; e
 					/>
 					<div className="flex items-center gap-2">
 						<span className="w-[62px] shrink-0 text-[12px] text-[var(--label-2)]">Primary</span>
-						<div className="flex flex-1 flex-wrap items-center gap-[5px]">
-							{PRIMARY_PRESETS.map((c) => (
-								<button
-									key={c}
-									type="button"
-									title={c}
-									aria-label={`Primary color ${c}`}
-									onClick={() => void exec.run('set_theme', { screenId: shape.id, primary: c })}
-									className={`rounded-full p-[1.5px] transition-[color,background-color,box-shadow,transform] duration-150 ${theme.primary.toLowerCase() === c ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
-								>
-									<span className="block h-[16px] w-[16px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: c }} />
-								</button>
-							))}
-							<label className="relative cursor-pointer rounded-full p-[1.5px]" title="Custom primary color">
-								<span className="block h-[16px] w-[16px] rounded-full" style={{ background: 'conic-gradient(#f43f5e, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #f43f5e)' }} />
-								<input type="color" className="sr-only" value={theme.primary.length === 7 ? theme.primary : '#5b5bd6'} onChange={(e) => void exec.run('set_theme', { screenId: shape.id, primary: e.target.value })} />
+						<div className="flex flex-1 flex-wrap items-center gap-[3px] pointer-coarse:gap-0" role="radiogroup" aria-label="Primary color">
+							{PRIMARY_PRESETS.map(({ hex: c, name }) => {
+								const on = theme.primary.toLowerCase() === c
+								return (
+									<button
+										key={c}
+										type="button"
+										role="radio"
+										aria-checked={on}
+										title={`${name} · ${c.toUpperCase()}`}
+										aria-label={`Primary color: ${name}`}
+										onClick={() => void exec.run('set_theme', { screenId: shape.id, primary: c })}
+										className="group/sw flex h-6 w-6 items-center justify-center rounded-full pointer-coarse:h-11 pointer-coarse:w-11"
+									>
+										<span
+											className={`block h-[16px] w-[16px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)] transition-shadow duration-150 pointer-coarse:h-[22px] pointer-coarse:w-[22px] ${on ? 'shadow-[0_0_0_2px_var(--card),0_0_0_4px_#0D99FF]' : 'group-hover/sw:shadow-[0_0_0_2px_var(--card),0_0_0_3.5px_var(--separator)]'}`}
+											style={{ background: c }}
+										/>
+									</button>
+								)
+							})}
+							<label className="relative flex h-6 w-6 cursor-pointer items-center justify-center rounded-full pointer-coarse:h-11 pointer-coarse:w-11" title="Custom primary color">
+								<span className="block h-[16px] w-[16px] rounded-full pointer-coarse:h-[22px] pointer-coarse:w-[22px]" style={{ background: 'conic-gradient(#f43f5e, #f59e0b, #22c55e, #06b6d4, #6366f1, #d946ef, #f43f5e)' }} />
+								<input type="color" className="sr-only" aria-label="Custom primary color" value={theme.primary.length === 7 ? theme.primary : '#5b5bd6'} onChange={(e) => void exec.run('set_theme', { screenId: shape.id, primary: e.target.value })} />
 							</label>
 						</div>
 					</div>
