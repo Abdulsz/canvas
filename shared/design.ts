@@ -458,6 +458,16 @@ function leafHugW(node: LayoutNode): number {
 			return node.w
 	}
 }
+/** Width a leaf needs to show its content (label, icon, padding) without clipping. */
+export function hugWidth(node: LayoutNode, measure?: TextMeasurer): number {
+	const prev = activeMeasurer
+	activeMeasurer = measure ?? estimateText
+	try {
+		return leafHugW(node)
+	} finally {
+		activeMeasurer = prev
+	}
+}
 function leafHugH(node: LayoutNode, w: number): number {
 	const fs = node.fontSize ?? 16
 	switch (node.kind) {

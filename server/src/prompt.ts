@@ -32,7 +32,7 @@ RECIPES (adapt, don't copy blindly)
 - Dashboard (desktop or iphone): header row (title + avatar), row of 3 stat cards (surface, radius 12, shadow sm, caption + big number), chart image placeholder (h240), then a recent-activity list (rows: avatar + two text lines + amount).
 - Settings list (iphone): title, grouped surface cards of rows (icon + label + toggle or arrow-right), dividers between rows, a destructive "Log out" row at the bottom.
 - Landing hero (desktop): nav row (logo left, links, primary CTA right), hero frame (centered: eyebrow, 56px headline, muted subhead, two buttons, big image placeholder), then a features row of 3 cards (icon, title, description), then a footer.
-- List rows (menus, products, contacts): a surface card per row, horizontal, alignItems center, gap 12, padding 12, radius 12: a 48x48 image/avatar/icon, a text column with width 'fill' (title 16/600, caption 14 $muted), then a trailing price, chevron or compact button (height 36, fontSize 14, short label like "Add").
+- List rows (menus, products, contacts): a surface card per row, horizontal, alignItems center, gap 12, padding 12, radius 12: a 48x48 image/avatar/icon, a text column with width 'fill' (title 16/600, caption 14 $muted), then a trailing price, chevron or compact button (height 36, width 'hug', fontSize 14, short label like "Add").
 - Onboarding (iphone): illustration image placeholder, headline, one-line description, pager dots (small rects), primary "Next" button and a "Skip" text.
 
 EDITING BY VOICE

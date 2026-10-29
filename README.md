@@ -104,7 +104,7 @@ Tool calls run in a connected browser because layout and image export need a rea
 | `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
 | `XAI_MODEL` | `grok-4.7` | Chat model with tool calling and image input (also the vision model for `/api/describe`) |
 | `XAI_OPENER_MODEL` | `grok-4.20-non-reasoning` | Fast model that speaks the first sentence while the main model designs (`off` disables) |
-| `XAI_REASONING_EFFORT` | `low` | Reasoning effort for conversational turns (`XAI_REVIEW_REASONING_EFFORT`, default `medium`, for critiques) |
+| `XAI_REASONING_EFFORT` | `low` | Reasoning effort for conversational turns (`XAI_REVIEW_REASONING_EFFORT`, also `low` by default, for critiques: `medium` found the same issues but left about 10s of silence) |
 | `XAI_VOICE` | `ara` | Grok voice (`GET https://api.x.ai/v1/tts/voices` lists them) |
 | `XAI_REALTIME_MODEL` | `grok-voice-latest` | Speech-to-speech model for Live voice |
 | `REALTIME` | `on` | `off` hides the Live voice option |
@@ -134,6 +134,9 @@ npm run test:realtime                      # Live voice client against a local f
                                            #   is skipped when xAI is unreachable)
 npm run test:voice                         # live Grok: fake microphone asks for a login screen (needs XAI_API_KEY)
 npm run test:review                        # live Grok: Critique of a flawed checkout screen (needs XAI_API_KEY)
+npm run test:live                          # live Grok: 5 typed turns (login, brown button, remember-me toggle, dark mode,
+                                           #   menu screen + flow) and a Critique; checks layout, prints latencies, OUT_DIR screenshots
+npm run test:realtime-live                 # Live voice against xAI's real realtime WebSocket (server without REALTIME_URL)
 ```
 
 - `e2e/collab.mjs`: Alice asks for a login screen, then continues in the same session ("make the button green", "add a toggle", "switch to dark mode", "add a signup screen and connect it"). After each turn both browsers are checked through `window.__editor`: node props, `meta.theme`, the flow arrow's bindings, layers. It also checks the agent cursor hides when idle and the fitted screen clears the voice dock. Bob retitles a node in the Design panel and presses Critique; the agent highlights his change and comments "@Bob …". Bob inserts a node, Alice asks to delete it, and the agent has to get an **Allow** first.
@@ -144,8 +147,11 @@ Set `CHROMIUM_PATH` to use a preinstalled Chromium and `OUT_DIR` for screenshots
 
 ## Status and known gaps
 
-- **The design product hasn't run against live Grok yet.** The development sandbox can't reach xAI, so `test:voice` and `test:review` were only syntax-checked (review also runs against the mock). The voice pipeline, Live voice token flow and vision step were tested live before the pivot, with about 3.5s from the end of a question to Grok's voice.
-- **Live voice has never run against xAI's real WebSocket.** It was built from xAI's protocol docs and tested end to end against `e2e/fake-realtime.mjs`.
+- **Verified live against xAI** (grok-4.7, opener grok-4.20-non-reasoning, voice ara, grok-voice-latest; Oct 2026): `test:voice`, `test:review`, `test:live`, `test:realtime-live`, and `test:realtime`'s vision step. Typical numbers from `test:live` (typed turns, measured from sending): cached ack 0.1s, Grok's own voice 1.8-2.5s, first canvas change 2-5s for edits and 7-15s for a new screen (the whole create_screen tree streams in one call), turn done 9-20s (mostly the voice finishing). Critique: voice after 6-11s. Voice test: first audio about 1.3s after the user stops talking, longest silence about 4s.
+- **Live voice works against xAI's real WebSocket:** client secret, `session.update`, server VAD, transcription, streamed voice (about 1s after VAD detects the end of the question) and function calls that build a screen.
+- **Speech can still recap.** Grok sometimes restates what it just built before its closing question, and the fast opener occasionally announces details the design then doesn't use.
+- **Hard-coded colors:** for "make the button brown" Grok sets a hex fill, which (correctly) doesn't follow dark mode. `$primary` is lightened automatically in dark mode when the brand color is too dark to read.
+- **Proxies:** the server's `fetch` honors `HTTPS_PROXY` (`NODE_USE_ENV_PROXY=1` in the server scripts). The browser's Live voice WebSocket uses the browser's own proxy settings.
 - **The mock agent is scripted.** It recognizes a fixed set of screens and edit phrases, and edits the newest screen.
 - **Comment placement is simple.** Comments go to the right of the screen and are nudged to the nearest free spot, which can land far from the node when screens are packed.
 - **Code export is a starting point:** static HTML/CSS with absolute sizes from the layout, no components or responsiveness.

@@ -14,6 +14,7 @@ import {
 	applySpec,
 	DEFAULT_THEME,
 	DEVICES,
+	hugWidth,
 	isContainerKind,
 	KIND_DEFAULTS,
 	kindDefaults,
@@ -333,6 +334,12 @@ export class CanvasExecutor {
 				if (bottom > s.props.h + 1) warnings.push(`Content of "${bare(s.id)}" overflows its height by ${Math.round(bottom - s.props.h)}px (clipped). Reduce content/gaps or make it taller.`)
 				if (right > s.props.w + 1) warnings.push(`Content of "${bare(s.id)}" overflows its width by ${Math.round(right - s.props.w)}px (clipped).`)
 				for (const k of kids) if (k.props.w < 1 && k.props.kind !== 'divider') warnings.push(`"${bare(k.id)}" has no room (width 0) in its row.`)
+				for (const k of kids) {
+					if (k.props.kind !== 'button' || !k.props.text || k.props.w < 1) continue
+					const m = this._meta(k)
+					const need = hugWidth({ id: k.id, kind: 'button', w: k.props.w, h: k.props.h, text: k.props.text, icon: k.props.icon, fontSize: k.props.fontSize, fontWeight: k.props.fontWeight, layout: m.layout, sizing: m.sizing }, measureTextDom)
+					if (k.props.w + 2 < need) warnings.push(`The label of "${bare(k.id)}" is clipped: it needs ${need}px but is ${Math.round(k.props.w)}px wide. Use width 'hug', a shorter label, or drop the icon.`)
+				}
 			}
 			kids.forEach(walk)
 		}
