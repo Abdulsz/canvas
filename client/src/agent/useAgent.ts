@@ -102,7 +102,8 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 					)
 					break
 				case 'chat':
-					addLog({ from: msg.from, text: msg.text, kind: 'user' })
+					// The server echoes a Critique press as "✅ Critique"; show it as plain words, like the live-voice path does.
+					addLog({ from: msg.from, text: /^[^\w\s]+\s*Critique$/u.test(msg.text.trim()) ? 'Critique my design' : msg.text, kind: 'user' })
 					break
 				case 'error':
 					addLog({ from: 'System', text: msg.message, kind: 'error' })

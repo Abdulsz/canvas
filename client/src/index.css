@@ -20,8 +20,12 @@
 	--bg: #f2f2f4;
 	--label: #1d1d1f;
 	--label-2: rgba(60, 60, 67, 0.82);
-	--label-3: rgba(60, 60, 67, 0.62);
+	--label-3: rgba(60, 60, 67, 0.74);
 	--separator: rgba(60, 60, 67, 0.14);
+	--focus: #0d99ff;
+	--canvas: #ebebed;
+	--dock: rgba(255, 255, 255, 0.94);
+	--press: rgba(120, 120, 128, 0.16);
 	--fill: rgba(120, 120, 128, 0.12);
 	--fill-2: rgba(120, 120, 128, 0.08);
 	--material: rgba(255, 255, 255, 0.72);
@@ -49,7 +53,11 @@
 		--agent-glow: rgba(140, 116, 255, 0.34);
 		--label: #f5f5f7;
 		--label-2: rgba(235, 235, 245, 0.78);
-		--label-3: rgba(235, 235, 245, 0.56);
+		--label-3: rgba(235, 235, 245, 0.6);
+		--focus: #4cc2ff;
+		--canvas: #111113;
+		--dock: rgba(34, 34, 37, 0.94);
+		--press: rgba(118, 118, 128, 0.3);
 		--separator: rgba(84, 84, 88, 0.55);
 		--fill: rgba(118, 118, 128, 0.26);
 		--fill-2: rgba(118, 118, 128, 0.16);
@@ -96,11 +104,39 @@ button:disabled {
 	cursor: default;
 }
 
-/* Touch: every primary control gets a 44px hit area on coarse pointers. */
-@media (pointer: coarse) {
-	.tap {
-		min-width: 44px;
-		min-height: 44px;
+/*
+ * Touch: every .tap control gets a hit area of at least 44x44 on coarse
+ * pointers without growing visually (an invisible, centered ::after).
+ * In the components layer so utilities such as `absolute` still win.
+ */
+@layer components {
+	@media (pointer: coarse) {
+		.tap {
+			position: relative;
+		}
+		.tap::after {
+			content: '';
+			position: absolute;
+			left: 50%;
+			top: 50%;
+			width: max(100%, 44px);
+			height: max(100%, 44px);
+			transform: translate(-50%, -50%);
+		}
+	}
+}
+
+/*
+ * Press feedback for every shell button (tldraw's own UI keeps its styles):
+ * a quick dim, no layout shift. Buttons that scale on :active keep that too.
+ */
+@layer base {
+	button:not(:disabled):not(.tl-container *):active {
+		opacity: 0.72;
+		transition: opacity 0ms;
+	}
+	button:not(:disabled):not(.tl-container *) {
+		-webkit-tap-highlight-color: transparent;
 	}
 }
 
@@ -109,6 +145,10 @@ button:disabled {
  * live mic meter. Designing: a turning gradient ring and shimmering caption.
  * Speaking: violet glow and a dancing meter, in step with the orb. */
 .voice-dock {
+	/* Near-opaque so canvas content never bleeds through the caption. */
+	background: var(--dock);
+	backdrop-filter: saturate(180%) blur(28px);
+	-webkit-backdrop-filter: saturate(180%) blur(28px);
 	box-shadow: var(--shadow-panel);
 	transition:
 		box-shadow 250ms var(--ease-out),
@@ -289,6 +329,26 @@ button:disabled {
 	}
 }
 
+.fade-in {
+	animation: fade-in 200ms var(--ease-out) both;
+}
+@keyframes fade-in {
+	from {
+		opacity: 0;
+	}
+}
+@media (max-width: 767px) {
+	.slide-in {
+		animation: slide-in 250ms var(--ease-out) both;
+	}
+}
+@keyframes slide-in {
+	from {
+		transform: translateX(-24px);
+		opacity: 0;
+	}
+}
+
 .pop {
 	animation: pop 220ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
 }
@@ -307,7 +367,7 @@ button:disabled {
 /* In the base layer so utilities like outline-none can override it. */
 @layer base {
 	:focus-visible {
-		outline: 2px solid #0d99ff;
+		outline: 2px solid var(--focus);
 		outline-offset: 2px;
 	}
 }
@@ -339,7 +399,7 @@ button:disabled {
 	--tl-color-selected: #f5f5f7;
 	--tl-color-selected-contrast: #000000;
 	--tl-color-focus: rgba(255, 255, 255, 0.4);
-	--tl-color-background: #161618;
+	--tl-color-background: #111113;
 	--tl-color-selection-stroke: #0d99ff;
 	--tl-color-selection-fill: rgba(13, 153, 255, 0.2);
 }
@@ -377,4 +437,24 @@ button:disabled {
 	.layer-row {
 		height: 40px;
 	}
+}
+
+/*
+ * Dark shell: a hairline ring defines each screen's edge against the dark
+ * pasteboard (light screens otherwise glare, dark ones melt into it). Screens
+ * are the ui shapes that render a name label above them.
+ */
+.tl-theme__dark .tl-html-container:has(> div + div[style*='bottom: 100%']) > div:first-child {
+	outline: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* Mobile bottom sheet. */
+.sheet-handle::before {
+	content: '';
+	display: block;
+	width: 36px;
+	height: 5px;
+	border-radius: 999px;
+	background: var(--fill-strong);
+	margin: 0 auto;
 }

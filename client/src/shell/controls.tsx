@@ -22,7 +22,7 @@ export function Row({ children, cols = 2 }: { children: ReactNode; cols?: number
 }
 
 const fieldBox =
-	'flex h-7 min-w-0 items-center gap-1.5 rounded-[6px] bg-[var(--fill-2)] px-2 text-[11.5px] text-[var(--label)] shadow-[inset_0_0_0_1px_transparent] transition focus-within:bg-[var(--card)] focus-within:shadow-[inset_0_0_0_1px_#0D99FF] hover:shadow-[inset_0_0_0_1px_var(--separator)]'
+	'flex h-7 min-w-0 items-center gap-1.5 rounded-[6px] bg-[var(--fill-2)] px-2 text-[12px] text-[var(--label)] shadow-[inset_0_0_0_1px_transparent] transition-[color,background-color,box-shadow,transform] duration-150 focus-within:bg-[var(--card)] focus-within:shadow-[inset_0_0_0_1px_#0D99FF] hover:shadow-[inset_0_0_0_1px_var(--separator)]'
 
 /** Number input that commits on Enter / blur, with arrow-key nudging (Shift = 10). */
 export function NumberField({
@@ -96,7 +96,7 @@ export function TextField({ value, onCommit, placeholder, multiline, label }: { 
 		return (
 			<textarea
 				aria-label={label}
-				className="scroll-soft block min-h-[56px] w-full resize-y rounded-[6px] bg-[var(--fill-2)] px-2 py-1.5 text-[12px] leading-snug text-[var(--label)] outline-none transition focus:bg-[var(--card)] focus:shadow-[inset_0_0_0_1px_#0D99FF] focus-visible:outline-none"
+				className="scroll-soft block min-h-[56px] w-full resize-y rounded-[6px] bg-[var(--fill-2)] px-2 py-1.5 text-[12px] leading-snug text-[var(--label)] outline-none transition-[color,background-color,box-shadow,transform] duration-150 focus:bg-[var(--card)] focus:shadow-[inset_0_0_0_1px_#0D99FF] focus-visible:outline-none"
 				value={shown}
 				placeholder={placeholder}
 				onChange={(e) => setDraft(e.target.value)}
@@ -189,7 +189,7 @@ export function Segmented<V extends string>({
 						aria-checked={on}
 						title={o.title}
 						onClick={() => onChange(o.value)}
-						className={`flex min-w-0 items-center justify-center truncate rounded-[4.5px] px-1 text-[11px] transition ${
+						className={`flex min-w-0 items-center justify-center truncate rounded-[4.5px] px-1 text-[11px] transition-[color,background-color,box-shadow,transform] duration-150 ${
 							on ? 'bg-[var(--card)] font-semibold text-[var(--label)] shadow-[var(--shadow-control)]' : 'text-[var(--label-2)] hover:text-[var(--label)]'
 						}`}
 					>
@@ -269,7 +269,7 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 							title={`$${t}`}
 							aria-label={`${label}: ${t} token`}
 							onClick={() => onCommit(`$${t}`)}
-							className={`rounded-full p-[1.5px] transition ${on ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
+							className={`rounded-full p-[1.5px] transition-[color,background-color,box-shadow,transform] duration-150 ${on ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 						>
 							<span className="block h-[13px] w-[13px] rounded-full shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]" style={{ background: resolveColor(`$${t}`, theme) }} />
 						</button>
@@ -281,7 +281,7 @@ export function ColorField({ label, value, theme, onCommit, allowNone = true }: 
 						title="None"
 						aria-label={`${label}: none`}
 						onClick={() => onCommit('transparent')}
-						className={`rounded-full p-[1.5px] transition ${value === 'transparent' ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
+						className={`rounded-full p-[1.5px] transition-[color,background-color,box-shadow,transform] duration-150 ${value === 'transparent' ? 'shadow-[0_0_0_1.5px_#0D99FF]' : 'hover:shadow-[0_0_0_1.5px_var(--separator)]'}`}
 					>
 						<span className="relative block h-[13px] w-[13px] overflow-hidden rounded-full bg-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]">
 							<span className="absolute left-1/2 top-[-2px] h-[18px] w-px -translate-x-1/2 rotate-45 bg-[var(--red)]" />
@@ -350,7 +350,7 @@ export function MenuItem({ icon, label, hint, onClick, disabled }: { icon?: Reac
 			role="menuitem"
 			disabled={disabled}
 			onClick={onClick}
-			className="flex h-8 w-full items-center gap-2.5 rounded-[7px] px-2 text-left text-[13px] text-[var(--label)] transition hover:bg-[var(--fill)] disabled:opacity-40 disabled:hover:bg-transparent"
+			className="flex h-8 w-full items-center gap-2.5 rounded-[7px] px-2 text-left text-[13px] pointer-coarse:h-11 text-[var(--label)] transition-[color,background-color,box-shadow,transform] duration-150 hover:bg-[var(--fill)] disabled:opacity-40 disabled:hover:bg-transparent"
 		>
 			{icon && <span className="flex h-4 w-4 shrink-0 items-center justify-center text-[var(--label-2)]">{icon}</span>}
 			<span className="flex-1 truncate">{label}</span>
