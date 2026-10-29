@@ -1,6 +1,8 @@
 import {
 	KindAvatarIcon,
+	KindBadgeIcon,
 	KindButtonIcon,
+	KindChartIcon,
 	KindCheckboxIcon,
 	KindDividerIcon,
 	KindFrameIcon,
@@ -27,6 +29,8 @@ const MAP = {
 	checkbox: KindCheckboxIcon,
 	divider: KindDividerIcon,
 	rect: KindRectIcon,
+	badge: KindBadgeIcon,
+	chart: KindChartIcon,
 } as const
 
 export const KIND_LABELS: Record<string, string> = {
@@ -42,6 +46,8 @@ export const KIND_LABELS: Record<string, string> = {
 	checkbox: 'Checkbox',
 	divider: 'Divider',
 	rect: 'Rectangle',
+	badge: 'Badge',
+	chart: 'Chart',
 }
 
 export function KindIcon({ kind, className = 'h-3.5 w-3.5' }: { kind: string; className?: string }) {

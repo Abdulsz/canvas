@@ -14,7 +14,7 @@ import { layerName } from './names.ts'
 const TEXT_KINDS = new Set(['text', 'button', 'input', 'checkbox', 'avatar'])
 const TEXT_COLOR_KINDS = new Set(['text', 'button', 'input', 'checkbox', 'avatar', 'icon', 'image'])
 const ICON_KINDS = new Set(['icon', 'button', 'input', 'avatar', 'image'])
-const CONTENT_LABEL: Record<string, string> = { text: 'Text', button: 'Label', input: 'Placeholder', checkbox: 'Label', avatar: 'Name', image: 'Caption' }
+const CONTENT_LABEL: Record<string, string> = { text: 'Text', button: 'Label', input: 'Placeholder', checkbox: 'Label', avatar: 'Name', image: 'Caption', badge: 'Label' }
 const PRIMARY_PRESETS = ['#5b5bd6', '#2563eb', '#0d9488', '#16a34a', '#ea580c', '#e11d48', '#9333ea', '#111827']
 
 type Props = {

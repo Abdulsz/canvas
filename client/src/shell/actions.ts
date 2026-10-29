@@ -31,6 +31,8 @@ export type ComponentKey =
 	| 'checkbox'
 	| 'avatar'
 	| 'divider'
+	| 'badge'
+	| 'chart'
 
 export const COMPONENTS: { key: ComponentKey; label: string; kind: UiKind; spec: (id: string) => UiNodeSpec }[] = [
 	{ key: 'button', label: 'Button', kind: 'button', spec: (id) => ({ id, type: 'button', name: 'Button', text: 'Button' }) },
@@ -111,6 +113,13 @@ export const COMPONENTS: { key: ComponentKey; label: string; kind: UiKind; spec:
 	{ key: 'checkbox', label: 'Checkbox', kind: 'checkbox', spec: (id) => ({ id, type: 'checkbox', name: 'Checkbox', text: 'Remember me', checked: true }) },
 	{ key: 'avatar', label: 'Avatar', kind: 'avatar', spec: (id) => ({ id, type: 'avatar', name: 'Avatar', text: 'Jane Doe' }) },
 	{ key: 'divider', label: 'Divider', kind: 'divider', spec: (id) => ({ id, type: 'divider', name: 'Divider' }) },
+	{ key: 'badge', label: 'Badge', kind: 'badge', spec: (id) => ({ id, type: 'badge', name: 'Badge', text: 'New' }) },
+	{
+		key: 'chart',
+		label: 'Chart',
+		kind: 'chart',
+		spec: (id) => ({ id, type: 'chart', name: 'Chart', chart: 'bar', data: [12, 18, 15, 24, 21, 30, 27], labels: ['M', 'T', 'W', 'T', 'F', 'S', 'S'] }) as UiNodeSpec,
+	},
 ]
 
 /** Brings a shape into view: zooms to a screen, pans to a node. Does nothing if it is already visible. */
