@@ -1,8 +1,8 @@
-# Grok Whiteboard
+# Grok Design
 
-A shared, voice-driven teaching whiteboard. Professor Grok (an xAI Grok agent) explains system design, algorithms and other technical topics while drawing on a [tldraw](https://tldraw.dev) canvas. Several students can join the same board, draw alongside the agent, and ask it to check their work. The agent reads the board (shape data, plus an image when there's freehand ink) and answers by voice and with notes on the canvas.
+A shared, voice-driven UI and wireframe design tool. You describe app screens out loud (or type), and Grok Design, an xAI Grok agent, builds them on a Figma-like [tldraw](https://tldraw.dev) canvas while it talks. Then you keep the conversation going: "make the button green", "add a toggle", "switch to dark mode", "add a sign-up screen and connect it". Several people can join the same file, edit alongside the agent, and ask it for a critique.
 
-See [`interactive_whiteboard_agent_spec.md`](interactive_whiteboard_agent_spec.md) for the full spec.
+The design behind the pivot from the earlier teaching whiteboard is in [`docs/DESIGN_PLAN.md`](docs/DESIGN_PLAN.md).
 
 ## Quick start
 
@@ -12,96 +12,142 @@ cp .env.example .env          # optional: add XAI_API_KEY
 npm run dev                   # server on :8787, client on :5173
 ```
 
-Open http://localhost:5173. You'll be sent to a new room (`/r/<id>`). Use **Invite** to copy the link and open it in another browser to collaborate.
+Open http://localhost:5173. You'll be sent to a new file (`/r/<id>`). Use **Invite** to copy the link and open it in another browser to collaborate.
 
-If `XAI_API_KEY` isn't set, the server uses a **scripted mock agent** so you can try every flow offline:
+Without `XAI_API_KEY`, the server uses a **scripted mock agent** (the panel shows a *Demo* badge), so every flow works offline:
 
-- Ask "explain a web architecture" and it draws a load-balanced web app.
-- Ask "show two pointers on an array" and it walks through a two-pointer search step by step.
-- Draw something, then press **Check my work**. It reads your shapes, highlights them and leaves a comment addressed to you.
+- "Design a login screen", "Build a dashboard", "Make a landing page", "Onboarding", "Settings" build a first draft. Other requests get a generic screen named after your words.
+- Edits: "make the button green", "add a toggle / button / input / image / checkbox / text", "rename the title to …", "delete the …", "switch to dark mode" / "light mode", "add a sign-up screen and connect it".
+- **Critique** reads the canvas, highlights nodes and leaves comments addressed to whoever edited them.
 
 Production build: `npm run build && npm start` (the server serves `client/dist` on :8787).
 
-### Environment
+## Voice conversation
 
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
-| `XAI_MODEL` | `grok-4.7` | xAI chat model with tool calling and image input. `grok-4.7` was the fastest model tested that both speaks and draws in each step |
-| `XAI_OPENER_MODEL` | `grok-4.20-non-reasoning` | Fast model that speaks the first sentence or two while the drawing model works (`off` disables) |
-| `XAI_REASONING_EFFORT` | `low` | Reasoning effort for conversational turns (`XAI_REVIEW_REASONING_EFFORT`, default `medium`, for reviews) |
-| `XAI_VOICE` | `ara` | Grok voice for the agent (`GET https://api.x.ai/v1/tts/voices` lists them) |
-| `XAI_REALTIME_MODEL` | `grok-voice-latest` | Speech-to-speech model for Live voice |
-| `REALTIME` | `on` | `off` hides the Live voice option |
-| `VOICE` | `grok` | `browser` forces the Web Speech API fallback even when an API key is set |
-| `XAI_BASE_URL` | `https://api.x.ai/v1` | OpenAI-compatible endpoint |
-| `PORT` | `8787` | Server port |
-| `DATA_DIR` | `server/data` | Room databases (SQLite) and uploaded images |
-| `PERSIST` | `true` | `false` keeps rooms in memory only |
-| `IDLE_MS` | `4000` | Proactive mode: how long students must pause before the agent looks |
-| `VITE_TLDRAW_LICENSE_KEY` | (none) | tldraw license key, needed for production deployments |
+Tap the mic in the floating **voice dock** (or the Agent tab) once and just talk. The mic stays open, hands-free.
 
-The server reads `.env` from the repo root on start.
+- **Listening:** the browser records with echo cancellation and detects when you start and stop talking. Each utterance goes to Grok speech-to-text (`POST /api/stt`), biased toward design vocabulary.
+- **Designing:** the agent streams Grok's reply. Each step is one or two short spoken sentences plus that step's tool calls. Tool calls run as soon as they stream in, and the next step waits for the current line to finish, so the canvas stays in step with the voice.
+- **No dead air:** a short cached acknowledgement ("Sure.") plays the moment you stop talking. A fast non-reasoning model (`XAI_OPENER_MODEL`) speaks the first sentence about 1s later while the main model prepares the design, and is told what was already said.
+- **Speaking:** the server starts Grok text-to-speech right away and streams the audio to everyone in the room (`GET /api/tts/:id`). The dock captions the agent's current line.
+- **Steering:** the agent builds a sensible first draft instead of asking questions, then ends with one focused question ("Want social login too?").
+- **Interrupting:** talking over the agent cuts its voice off, and your request takes over the turn.
+- **Fallback:** without Grok voice (no key, or `VOICE=browser`), the browser's Web Speech API does recognition and speech (`client/src/agent/speech.ts`).
 
-## How it works
+### Live voice (beta)
+
+The **Live voice** switch in the Agent tab uses xAI's [speech-to-speech API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) instead of the step-by-step pipeline:
+
+- The browser gets a short-lived client secret (`POST /api/realtime/session`), then connects straight to `wss://api.x.ai/v1/realtime`. The API key never reaches the browser.
+- Mic audio streams as 24 kHz PCM16 and Grok's voice plays as it arrives. Server-side VAD handles turn taking; talking over Grok stops playback and reports how much was heard (`conversation.item.truncate`).
+- Grok's function calls (the same design tools) run in that tab and sync to everyone. `look_at_board` sends a snapshot to `POST /api/describe`, where the vision model describes it, because the voice model can't take images.
+- The "ask before changing someone's work" rule runs in the browser for these calls.
+- It's one person and Grok: others see the design change but don't hear the conversation.
+
+## Design model
+
+Everything is one custom tldraw shape, `ui` (`shared/design.ts`, rendered by `client/src/design/UiShapeUtil.tsx`, registered in the server schema too).
+
+- **Screens** are top-level artboards (`kind: 'screen'`) sized from device presets: iPhone 390×844, Android 412×915, tablet 834×1194, desktop 1440×1024, watch 198×242. New screens go to the right of the existing ones.
+- **Nodes** nest inside screens as real tldraw children: `frame`, `text`, `button`, `input`, `image`, `icon`, `avatar`, `toggle`, `checkbox`, `divider`, `rect`. Kind defaults (`KIND_DEFAULTS`) keep specs short, e.g. a button is 48px tall, hugs its label and uses `$primary`.
+- **Auto layout** works like Figma's: containers have `layout` vertical / horizontal / none, `gap`, `padding`, `alignItems`, `justify`; children size `fixed`, `hug` or `fill`. The layout engine is pure and shared (`layoutTree`, unit tested); the executor re-runs it on the affected screen after every structural edit.
+- **Tokens and themes:** colors are hex or tokens (`$bg $surface $surfaceAlt $primary $onPrimary $text $muted $border`) resolved against the screen's `meta.theme` (`light` / `dark`, plus a primary color). Dark mode is one `set_theme` call; a new screen inherits the latest screen's theme.
+- **Authorship:** each tab stamps `meta.author` / `meta.updatedBy` (`{ kind: 'user' | 'agent', id, name }`) on what it creates or edits (`client/src/agent/authorship.ts`).
+
+## Agent tools
+
+Defined in `shared/tools.ts`, executed in a participant's browser by `CanvasExecutor` (`client/src/agent/executor.ts`), so edits sync like any other edit.
+
+| Group | Tools |
+| --- | --- |
+| Design | `create_screen` (a whole screen tree in one call; same id replaces it), `add_nodes`, `update_node`, `move_node`, `delete_nodes`, `duplicate_screen`, `set_theme`, `connect_screens` (prototype flow arrow), `focus_view`, `clear_canvas` |
+| Reading | `get_canvas_state` (screens as nested trees; default-valued props and auto-layout positions are omitted to save tokens), `get_canvas_image`, `get_recent_changes` (server change log), `get_participants` |
+| Feedback | `highlight_shapes`, `add_comment` (`issue`, `suggestion`, `praise`, `question`, addressed to a collaborator) |
+| Live voice only | `look_at_board` |
+
+Tool results include warnings when content overflows its container, so the model can fix it. Modes: **On request** (Critique button or voice), **Proactive** (comments after collaborators pause for `IDLE_MS`) and **Guided** (the agent leads, one decision at a time).
+
+**Respecting people's work:** `AgentSession.guard` (server) checks every call against the server's copy of the shapes. Changing or deleting a node a collaborator authored needs someone to click **Allow** first. Annotations never touch their nodes.
+
+## App shell
+
+`client/src/shell/`:
+
+- **Top bar:** file name, **Insert** menu (screen presets by device; components: button, input, heading, text, image, card, navbar, list item, toggle, checkbox, avatar, divider, inserted into the selected screen or frame), screen theme toggle, Export (Copy code, PNG), Invite, collaborators.
+- **Layers** (left): screens and nested nodes; click to select, hover to highlight, double-click to rename.
+- **Design** tab (right): properties of the selected node: size and sizing, auto layout, theme and primary color (screens), fill / text / stroke colors with token swatches, radius, opacity, shadow, typography, content, and export (**Copy code**: standalone HTML/CSS for the node or screen, PNG @2x). With nothing selected it lists screens and new-screen presets.
+- **Agent** tab (right): conversation, text input, Critique, mode, mute, Live voice.
+- **Voice dock** (floating over the canvas): mic plus live captions. Zoom to fit (agent `focus_view`, Shift+1 and Shift+2) leaves room for it. The agent's cursor shows where it is working and fades out a few seconds after it goes idle.
+
+## Architecture
 
 ```
- Browser (student A)            Browser (student B)
+ Browser (Alice)                Browser (Bob)
  ┌───────────────────┐          ┌───────────────────┐
  │ tldraw + useSync  │◄────────►│ tldraw + useSync  │   /sync/:room   (tldraw sync protocol)
- │ Agent panel/voice │          │ Agent panel/voice │   /agent/:room  (agent protocol, shared/protocol.ts)
+ │ shell, voice dock │          │ shell, voice dock │   /agent/:room  (agent protocol, shared/protocol.ts)
  └─────────┬─────────┘          └─────────┬─────────┘
            └──────────────┬───────────────┘
                  Node server (server/src)
    rooms.ts   TLSocketRoom per room (SQLite), shape mirror, change log
-   agent.ts   AgentSession per room: Grok tool loop, guard, review triggers
+   agent.ts   AgentSession per room: Grok tool loop, guard, critique triggers
    llm.ts     xAI chat-completions client (mock.ts = offline stand-in)
+   voice.ts   Grok TTS/STT; realtime.ts = Live voice tokens + /api/describe
 ```
 
-- **Sync and presence.** `@tldraw/sync` keeps one authoritative document per room, with live cursors and names. Rooms are stored in SQLite under `DATA_DIR/rooms`.
-- **Authorship.** Each tab stamps `meta.author` / `meta.updatedBy` (`{ kind: 'user' | 'agent', id, name }`) on the shapes it creates or edits (`client/src/agent/authorship.ts`).
-- **Agent as a participant.** The server runs the Grok loop. Drawing tools are carried out by a connected browser (the student who triggered the turn) through `CanvasExecutor` (`client/src/agent/executor.ts`). The edits then sync to everyone like any other edit. The agent has its own cursor, which is broadcast to the room.
-- **Seeing the board.** `get_canvas_state` returns shapes, labels, arrow connections and authors. `get_canvas_image` returns a PNG (`editor.toImage`) that is sent to Grok as an image input. `get_recent_changes` is served from the server's change log. For **Check my work** and proactive reviews, the server gathers this context up front. It always includes an image when the student drew freehand ink.
-- **Review modes.** *On request* (button or voice), *Proactive* (runs after students pause for `IDLE_MS`) and *Exercise* (the agent sets a task, then grades it).
-- **Respecting student work.** `AgentSession.guard` checks every tool call against the server's copy of the shapes. Any call that would change or erase a student-authored shape needs a student to click **Allow** first. Annotations (`highlight_shapes`, `add_comment`, `suggest_correction`) never touch student shapes. Students can **Accept** or **Dismiss** suggested corrections from the panel.
-- **Voice conversation.** Tap the mic once and just talk; the mic stays open (hands-free).
-  - *Listening:* the browser records with echo cancellation and detects when you start and stop talking. Each utterance goes to Grok speech-to-text through `POST /api/stt`.
-  - *Thinking and drawing:* the agent streams Grok's reply. It starts speaking as soon as the step's sentence is complete, and runs each drawing call the moment it arrives.
-  - *Speaking:* the server starts Grok text-to-speech right away and streams the audio to everyone in the room from one request (`GET /api/tts/:id`).
-  - *No dead air:* the moment you finish talking, a short pre-synthesized acknowledgement plays ("Sure."). A fast non-reasoning model then speaks the first sentence or two, about 1s later, while `grok-4.7` (at low reasoning effort) prepares the drawing. It's told what was already said, so it continues without repeating. Each sentence goes to the voice as soon as it streams in.
-  - *Pacing:* each step is one short spoken line plus that step's drawing. The next step waits for the line to finish, so the drawing stays in step with the voice.
-  - *Interrupting:* talking over the agent cuts its voice off immediately, and your question takes over the turn.
-  - *Fallback:* without an API key, the browser's Web Speech API is used instead (`client/src/agent/speech.ts`).
+Tool calls run in a connected browser because layout and image export need a real tldraw editor. The participant who started the turn runs them; if that tab disconnects, the next call moves to another participant.
 
-### Live voice (beta)
+## Environment
 
-The **Live voice** switch in the panel uses xAI's [speech-to-speech API](https://docs.x.ai/developers/model-capabilities/audio/speech-to-speech) instead of the step-by-step pipeline above:
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `XAI_API_KEY` | (none, uses the mock agent) | xAI API key |
+| `XAI_MODEL` | `grok-4.7` | Chat model with tool calling and image input (also the vision model for `/api/describe`) |
+| `XAI_OPENER_MODEL` | `grok-4.20-non-reasoning` | Fast model that speaks the first sentence while the main model designs (`off` disables) |
+| `XAI_REASONING_EFFORT` | `low` | Reasoning effort for conversational turns (`XAI_REVIEW_REASONING_EFFORT`, default `medium`, for critiques) |
+| `XAI_VOICE` | `ara` | Grok voice (`GET https://api.x.ai/v1/tts/voices` lists them) |
+| `XAI_REALTIME_MODEL` | `grok-voice-latest` | Speech-to-speech model for Live voice |
+| `REALTIME` | `on` | `off` hides the Live voice option |
+| `VOICE` | `grok` | `browser` forces the Web Speech API fallback even when an API key is set |
+| `AGENT_PROVIDER` | (auto) | `mock` forces the scripted agent even when an API key is set |
+| `XAI_BASE_URL` | `https://api.x.ai/v1` | OpenAI-compatible endpoint |
+| `PORT` | `8787` | Server port |
+| `DATA_DIR` | `server/data` | Room databases (SQLite) and uploaded images |
+| `PERSIST` | `true` | `false` keeps rooms in memory only |
+| `IDLE_MS` | `4000` | Proactive mode: how long collaborators must pause before the agent looks |
+| `AGENT_DEBUG` | (off) | Log each agent step and tool call |
+| `VITE_TLDRAW_LICENSE_KEY` | (none) | tldraw license key, needed for production deployments |
 
-- **Connection:** the browser asks the server for a short-lived client secret (`POST /api/realtime/session`, which calls `/v1/realtime/client_secrets`), then connects straight to `wss://api.x.ai/v1/realtime` using the `xai-client-secret.` subprotocol. The API key never reaches the browser.
-- **Audio:** the mic streams as 24 kHz PCM16, and Grok's voice streams back and plays immediately. xAI's server detects when you're talking, so speaking over Grok stops its playback and tells the server how much was heard (`conversation.item.truncate`).
-- **Drawing:** Grok's function calls run in that tab with the same executor, so the drawing syncs to everyone. Results go straight back, and the next turn is requested once the current audio finishes, as xAI recommends.
-- **Seeing the board:** the voice model can't take images, so its `look_at_board` tool sends a snapshot to `POST /api/describe`, where `grok-4.7` describes it.
-- **Student work:** the "ask before changing student work" rule runs in the browser for these calls (`studentWorkPrompt`).
-- **Limits:** it's one person and Grok. Others in the room see the drawing but don't hear the conversation. Grok sends its drawing calls after each spoken reply, so drawing lands at the end of a sentence rather than during it.
+The server reads `.env` from the repo root on start.
 
 ## Tests
 
 ```bash
-npm test                                   # server unit tests (guard, review pipeline, routing, change log)
-npm run build && npm start &               # then, in another shell:
-npm run test:e2e                           # two browsers + mock agent, end to end
-npm run test:voice                         # live Grok: fake microphone asks a question out loud (needs XAI_API_KEY)
-npm run test:review                        # live Grok: Check my work on a hand-drawn design (needs XAI_API_KEY)
+npm run typecheck
+npm test                                   # server unit tests: layout engine, guard, agent loop, routing, change log
+npm run build && npm start &               # mock agent (no XAI_API_KEY); then, in another shell:
+npm run test:e2e                           # two collaborators + mock agent, multi-turn conversation
+npm run test:voice-browser                 # browser-voice fallback: dock mic, spoken turns, captions, barge-in
 npm run test:realtime                      # Live voice client against a local fake of xAI's realtime API
-                                           #   (server needs REALTIME_URL=ws://localhost:8790; XAI_API_KEY for look_at_board)
+                                           #   (server needs REALTIME_URL=ws://localhost:8790 and any XAI_API_KEY,
+                                           #   e.g. AGENT_PROVIDER=mock VOICE=browser; look_at_board's vision step
+                                           #   is skipped when xAI is unreachable)
+npm run test:voice                         # live Grok: fake microphone asks for a login screen (needs XAI_API_KEY)
+npm run test:review                        # live Grok: Critique of a flawed checkout screen (needs XAI_API_KEY)
 ```
 
-The e2e script (`e2e/collab.mjs`) runs two students in one room. The agent draws a diagram that both see. Bob draws a box and freehand ink, presses **Check my work**, and the agent annotates his work by name. It then animates a two-pointer array walkthrough. Set `CHROMIUM_PATH` to use a preinstalled Chromium.
+- `e2e/collab.mjs`: Alice asks for a login screen, then continues in the same session ("make the button green", "add a toggle", "switch to dark mode", "add a signup screen and connect it"). After each turn both browsers are checked through `window.__editor`: node props, `meta.theme`, the flow arrow's bindings, layers. It also checks the agent cursor hides when idle and the fitted screen clears the voice dock. Bob retitles a node in the Design panel and presses Critique; the agent highlights his change and comments "@Bob …". Bob inserts a node, Alice asks to delete it, and the agent has to get an **Allow** first.
+- `e2e/voice-browser.mjs` replaces the Web Speech API with a scripted stand-in (headless Chromium has no working recognition or voices) and drives the real dock mic, hands-free loop, captions and barge-in.
+- `e2e/question.wav` was synthesized with flite ("Hey, can you design a login screen for my coffee app?").
+
+Set `CHROMIUM_PATH` to use a preinstalled Chromium and `OUT_DIR` for screenshots.
 
 ## Status and known gaps
 
-- **Tested against live Grok** (`grok-4.7`, Grok TTS/STT): a fake microphone asked a question out loud. It took about 3.5s from the end of the question to Grok's voice starting, with the diagram drawn while it spoke. Interrupting mid-explanation worked, and Check my work correctly read hand-drawn arrows from the board image. See `e2e/voice.mjs`.
-- **Live voice has not run against xAI's real WebSocket yet.** The development sandbox can't open WebSockets to xAI. The client was built from xAI's protocol docs and schema, and tested end to end against a local fake server that follows them (`e2e/fake-realtime.mjs`). The real token endpoint and the `look_at_board` vision step were tested live.
-- **Echo cancellation depends on the browser.** The detector raises its threshold while the agent is speaking. Headphones are still the most reliable setup if the agent keeps interrupting itself.
-- **Tool execution needs a connected browser.** Exporting images and laying out shapes needs a real tldraw editor, so tool calls run in a participant's tab instead of a headless client on the server. If that tab disconnects, the next tool call moves to another connected participant.
-- **No authentication.** Anyone with a room link can join, and identities are self-declared names.
+- **The design product hasn't run against live Grok yet.** The development sandbox can't reach xAI, so `test:voice` and `test:review` were only syntax-checked (review also runs against the mock). The voice pipeline, Live voice token flow and vision step were tested live before the pivot, with about 3.5s from the end of a question to Grok's voice.
+- **Live voice has never run against xAI's real WebSocket.** It was built from xAI's protocol docs and tested end to end against `e2e/fake-realtime.mjs`.
+- **The mock agent is scripted.** It recognizes a fixed set of screens and edit phrases, and edits the newest screen.
+- **Comment placement is simple.** Comments go to the right of the screen and are nudged to the nearest free spot, which can land far from the node when screens are packed.
+- **Code export is a starting point:** static HTML/CSS with absolute sizes from the layout, no components or responsiveness.
+- **Echo cancellation depends on the browser.** Headphones are the most reliable setup if the agent keeps interrupting itself.
+- **No authentication.** Anyone with a file link can join, and names are self-declared.

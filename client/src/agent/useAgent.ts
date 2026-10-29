@@ -24,6 +24,7 @@ export type AgentState = {
 }
 
 let logSeq = 0
+const AGENT_CURSOR_IDLE_MS = 3000
 
 /** Connects this tab to the room's agent and runs the tool calls it sends here. */
 export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
@@ -156,6 +157,14 @@ export function useAgent(roomId: string, me: Identity, editor: Editor | null) {
 			wsRef.current?.close()
 		}
 	}, [editor, roomId, me, send, addLog, confirm])
+
+	// The agent's cursor parks where it last worked; once the agent has been idle
+	// (not busy, not speaking) for a few seconds, it leaves the canvas.
+	useEffect(() => {
+		if (state.busy || state.speaking || !state.agentCursor) return
+		const t = setTimeout(() => setState((s) => (s.busy || s.speaking ? s : { ...s, agentCursor: null })), AGENT_CURSOR_IDLE_MS)
+		return () => clearTimeout(t)
+	}, [state.busy, state.speaking, state.agentCursor])
 
 	const actions = {
 		say: (text: string) => send({ type: 'user_message', text, selection: editorRef.current?.getSelectedShapeIds() ?? [] }),

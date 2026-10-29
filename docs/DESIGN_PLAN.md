@@ -104,7 +104,7 @@ Node spec used by the tools (`UiNodeSpec`):
 Design tools (run in the browser by `CanvasExecutor`):
 - `create_screen { id, name, device?, width?, height?, x?, y?, theme?: 'light'|'dark', primary?, fill?, layout?, gap?, padding?, alignItems?, justify?, children? }`
   Creates an artboard and its whole subtree in one call. Without x/y it is placed
-  to the right of the existing screens (80px gap). Calling it again with an
+  to the right of the existing screens (120px gap). Calling it again with an
   existing id replaces that screen's contents.
 - `add_nodes { parentId, index?, nodes: UiNodeSpec[] }` insert subtrees into a screen/frame.
 - `update_node { id, ...any UiNodeSpec prop except children }` edit props; re-layout.

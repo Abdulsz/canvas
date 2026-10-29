@@ -54,7 +54,7 @@ export function unionBounds(editor: Editor, shapes: (TLShape | undefined)[]): Bo
 }
 
 /**
- * Where a new screen goes: to the right of the existing screens (80px gap,
+ * Where a new screen goes: to the right of the existing screens (120px gap, room for flow arrows,
  * top-aligned with them, like a row of Figma artboards). On a canvas without
  * screens it goes into the viewport, clear of other shapes.
  */
@@ -64,10 +64,45 @@ export function nextScreenPosition(editor: Editor, w: number, h: number): { x: n
 		.filter((s) => s.type === 'ui' && (s.props as { kind?: string }).kind === 'screen' && s.parentId === editor.getCurrentPageId())
 	if (screens.length) {
 		const b = unionBounds(editor, screens)!
-		return { x: b.maxX + 80, y: Math.min(...screens.map((s) => s.y)) }
+		return { x: b.maxX + 120, y: Math.min(...screens.map((s) => s.y)) }
 	}
 	if (!editor.getCurrentPageShapes().length) return { x: 0, y: 0 }
 	const v = editor.getViewportPageBounds()
 	const spot = findFreeSpot(editor, new Box(v.x + 80, v.y + 80, w, h), { avoidAll: true })
 	return { x: spot.x, y: spot.y }
+}
+
+/**
+ * Space (screen px) at the bottom of the canvas covered by floating UI (the
+ * voice dock and tldraw's toolbar), read from the DOM so fitting a screen
+ * never hides its bottom under them.
+ */
+export function bottomObstruction(editor: Editor): number {
+	const fallback = 140
+	if (typeof document === 'undefined') return fallback
+	const container = editor.getContainer().getBoundingClientRect()
+	const dock = document.querySelector('[data-testid="voice-dock"] > div')?.getBoundingClientRect()
+	if (!dock || !dock.height) return fallback
+	return Math.max(0, container.bottom - dock.top)
+}
+
+/**
+ * Like editor.zoomToBounds, but keeps the bottom clear of the voice dock:
+ * the bounds are fitted into the viewport minus `inset` on every side and
+ * the dock's height at the bottom, centered in what's left.
+ */
+export function fitBounds(editor: Editor, bounds: Box, opts: { inset?: number; targetZoom?: number; maxZoom?: number; animate?: boolean } = {}) {
+	const inset = opts.inset ?? 64
+	const vp = editor.getViewportScreenBounds()
+	const bottom = Math.max(inset, bottomObstruction(editor) + 16)
+	const availW = Math.max(1, vp.w - inset * 2)
+	const availH = Math.max(1, vp.h - inset - bottom)
+	const fit = Math.min(availW / Math.max(1, bounds.w), availH / Math.max(1, bounds.h))
+	const { minZoom, maxZoom } = editor.getCameraOptions().zoomSteps.length
+		? { minZoom: Math.min(...editor.getCameraOptions().zoomSteps), maxZoom: Math.max(...editor.getCameraOptions().zoomSteps) }
+		: { minZoom: 0.05, maxZoom: 8 }
+	const z = Math.max(minZoom, Math.min(opts.targetZoom ? Math.min(opts.targetZoom, fit) : fit, opts.maxZoom ?? 1, maxZoom))
+	const left = inset + (availW - bounds.w * z) / 2
+	const top = inset + (availH - bounds.h * z) / 2
+	editor.setCamera({ x: left / z - bounds.x, y: top / z - bounds.y, z }, opts.animate === false ? undefined : { animation: { duration: 400 } })
 }

@@ -16,6 +16,7 @@ import {
 	DEVICES,
 	isContainerKind,
 	KIND_DEFAULTS,
+	kindDefaults,
 	layoutTree,
 	normalizeKind,
 	specToTree,
@@ -32,7 +33,7 @@ import { measureTextDom } from '../design/measure.ts'
 import { readUiTree, uiChildren, uiMeta } from '../design/tree.ts'
 import type { UiShape } from '../design/UiShapeUtil.tsx'
 import { AGENT_AUTHOR, asAgent, authorOf } from './authorship.ts'
-import { findFreeSpot, nextScreenPosition, unionBounds } from './layout.ts'
+import { findFreeSpot, fitBounds, nextScreenPosition, unionBounds } from './layout.ts'
 
 type Args = Record<string, any>
 
@@ -53,7 +54,6 @@ const agentMeta = (extra: Args = {}) => ({ author: AGENT_AUTHOR, ...extra })
 const isUi = (s: TLShape | undefined): s is UiShape => s?.type === 'ui'
 const isScreen = (s: TLShape | undefined): s is UiShape => isUi(s) && s.props.kind === 'screen'
 const isContainer = (s: TLShape | undefined): s is UiShape => isUi(s) && isContainerKind(s.props.kind)
-const round = (n: number) => Math.round(n * 10) / 10
 
 /** Spec fields update_node accepts (everything except id/children). */
 const SPEC_KEYS = [
@@ -263,43 +263,62 @@ export class CanvasExecutor {
 		this.editor.updateShapes(children.map((c, i) => ({ id: c.id, type: 'ui', meta: { ...c.meta, order: i } }) as TLShapePartial))
 	}
 
-	/** Compact nested summary of a ui subtree. */
-	private _node(shape: UiShape, brief = false): Args {
+	/**
+	 * Compact nested summary of a ui subtree, for the model. Anything equal to the
+	 * kind's default (see KIND_DEFAULTS) is left out, and children of auto-layout
+	 * parents carry no x/y (the layout computes them), which keeps big screens
+	 * cheap in tokens.
+	 */
+	private _node(shape: UiShape, brief = false, parentAuto = false): Args {
 		const p = shape.props
 		const m = this._meta(shape)
+		const d = kindDefaults(p.kind)
 		const out: Args = { id: bare(shape.id), type: p.kind }
 		if (p.name && p.name !== out.id) out.name = p.name
 		if (p.text) out.text = p.text
-		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image'].includes(p.kind)) out.icon = p.icon
+		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image'].includes(p.kind) && (p.kind !== 'icon' || p.icon !== d.props.icon)) out.icon = p.icon
 		if (isScreen(shape)) {
 			const b = this.editor.getShapePageBounds(shape)!
 			Object.assign(out, { x: Math.round(b.x), y: Math.round(b.y) })
-		} else Object.assign(out, { x: round((shape as UiShape).x), y: round((shape as UiShape).y) })
-		Object.assign(out, { w: round(p.w), h: round(p.h) })
-		if (m.sizing.w !== 'fixed') out.width = m.sizing.w
-		if (m.sizing.h !== 'fixed') out.height = m.sizing.h
+		} else if (!parentAuto) Object.assign(out, { x: Math.round((shape as UiShape).x), y: Math.round((shape as UiShape).y) })
+		Object.assign(out, { w: Math.round(p.w), h: Math.round(p.h) })
+		// Sizing only when it differs from the kind's default ('fixed' means w/h are fixed numbers).
+		if (m.sizing.w !== d.meta.sizing.w) out.width = m.sizing.w
+		if (m.sizing.h !== d.meta.sizing.h) out.height = m.sizing.h
 		if (!brief) {
-			if (p.fill !== 'transparent') out.fill = p.fill
-			if (['text', 'button', 'input', 'checkbox', 'icon', 'avatar'].includes(p.kind)) {
-				out.textColor = p.textColor
-				if (p.kind !== 'icon') Object.assign(out, { fontSize: p.fontSize, fontWeight: p.fontWeight })
+			const dp = d.props
+			for (const k of ['fill', 'textColor', 'stroke', 'radius', 'shadow', 'opacity', 'align'] as const) {
+				if (p[k] !== dp[k]) out[k] = p[k]
 			}
-			if (p.kind === 'text' && p.align !== 'left') out.align = p.align
-			if (p.stroke !== 'transparent') Object.assign(out, { stroke: p.stroke, strokeWidth: p.strokeWidth })
-			if (p.radius) out.radius = p.radius
-			if (p.shadow !== 'none') out.shadow = p.shadow
-			if (p.opacity !== 1) out.opacity = p.opacity
-			if (p.kind === 'toggle' || p.kind === 'checkbox') out.checked = p.checked
+			if (p.stroke !== 'transparent' && p.strokeWidth !== dp.strokeWidth) out.strokeWidth = p.strokeWidth
+			if (['text', 'button', 'input', 'checkbox', 'avatar'].includes(p.kind)) {
+				if (p.fontSize !== dp.fontSize) out.fontSize = p.fontSize
+				if (p.fontWeight !== dp.fontWeight) out.fontWeight = p.fontWeight
+			} else delete out.align
+			if (['icon', 'image', 'rect', 'toggle', 'divider', 'screen', 'frame'].includes(p.kind)) delete out.textColor
+			if ((p.kind === 'toggle' || p.kind === 'checkbox') && p.checked !== dp.checked) out.checked = p.checked
 			if (m.layout && isContainerKind(p.kind)) {
 				const l = m.layout
-				Object.assign(out, { layout: l.mode, gap: l.gap, padding: l.padding, alignItems: l.alignItems, justify: l.justify })
+				const dl = d.meta.layout
+				if (l.mode !== dl?.mode) out.layout = l.mode
+				if (l.mode !== 'none') {
+					if (l.gap !== dl?.gap) out.gap = l.gap
+					const [t, r, b, lft] = l.padding
+					if (!dl || l.padding.some((v, i) => v !== dl.padding[i])) out.padding = t === r && r === b && b === lft ? t : t === b && r === lft ? [t, r] : l.padding
+					if (l.alignItems !== dl?.alignItems) out.alignItems = l.alignItems
+					if (l.justify !== dl?.justify) out.justify = l.justify
+				}
 			}
-			if (isScreen(shape)) out.theme = { ...DEFAULT_THEME, ...((shape.meta?.theme as object) ?? {}) }
+			if (isScreen(shape)) {
+				const theme = { ...DEFAULT_THEME, ...((shape.meta?.theme as object) ?? {}) }
+				if (theme.mode !== DEFAULT_THEME.mode || theme.primary !== DEFAULT_THEME.primary) out.theme = theme
+			}
 			const author = authorOf(shape)
 			if (author?.kind === 'user') out.author = { kind: author.kind, name: author.name }
 		}
 		const children = this._children(shape)
-		if (children.length) out.children = children.map((c) => this._node(c, brief))
+		const auto = isContainerKind(p.kind) && (m.layout?.mode ?? 'none') !== 'none'
+		if (children.length) out.children = children.map((c) => this._node(c, brief, auto))
 		return out
 	}
 
@@ -421,7 +440,10 @@ export class CanvasExecutor {
 		const { theme, primary, device: _d, x, y, ...spec } = args
 		const tree = specToTree({ ...(spec as UiNodeSpec), id: bare(id), width: w, height: h }, 'screen')
 		tree.props.name = String(args.name ?? (existing as UiShape | undefined)?.props.name ?? bare(id))
-		const prevTheme = (existing?.meta?.theme as Partial<ThemeSpec> | undefined) ?? {}
+		// A replaced screen keeps its theme; a new one follows the latest screen, so
+		// "add a sign-up screen" after "dark mode" stays dark.
+		const latest = editor.getCurrentPageShapesSorted().filter(isScreen).at(-1)
+		const prevTheme = ((existing ?? latest)?.meta?.theme as Partial<ThemeSpec> | undefined) ?? {}
 		const themeMeta: ThemeSpec = {
 			mode: theme === 'dark' || theme === 'light' ? theme : (prevTheme.mode ?? 'light'),
 			primary: typeof primary === 'string' && primary ? primary : (prevTheme.primary ?? DEFAULT_THEME.primary),
@@ -663,14 +685,23 @@ export class CanvasExecutor {
 		const fb = this.editor.getShapePageBounds(from)!
 		const tb = this.editor.getShapePageBounds(to)!
 		const rightward = tb.center.x >= fb.center.x
+		// Enter the destination level with the source when it can, so the flow reads as a straight line.
+		const endY = Math.min(0.9, Math.max(0.1, (fb.center.y - tb.y) / Math.max(1, tb.h)))
+		// Put the label in the gap between the two screens, not over the source screen's edge.
+		const fromScreen = this._screenOf(from)
+		const sb = fromScreen && fromScreen.id !== from.id ? this.editor.getShapePageBounds(fromScreen) : null
+		const x0 = rightward ? fb.maxX : fb.x
+		const x1 = rightward ? tb.x : tb.maxX
+		const gapMid = sb ? (rightward ? (sb.maxX + tb.x) / 2 : (sb.x + tb.maxX) / 2) : (x0 + x1) / 2
+		const labelPosition = Math.abs(x1 - x0) > 1 ? Math.min(0.9, Math.max(0.1, (gapMid - x0) / (x1 - x0))) : 0.5
 		this._act(() =>
 			this._arrow(
 				id,
 				from,
 				to,
-				{ richText: toRichText(String(args.label ?? '')), color: 'blue', size: 's', font: 'sans' },
+				{ richText: toRichText(String(args.label ?? '')), color: 'blue', size: 's', font: 'sans', labelPosition },
 				agentMeta({ role: 'flow' }),
-				{ start: { x: rightward ? 1 : 0, y: 0.5 }, end: { x: rightward ? 0 : 1, y: 0.25 } }
+				{ start: { x: rightward ? 1 : 0, y: 0.5 }, end: { x: rightward ? 0 : 1, y: endY } }
 			)
 		)
 		this._pointAt(to.id)
@@ -683,11 +714,8 @@ export class CanvasExecutor {
 		const bounds = unionBounds(editor, ids.map((id) => editor.getShape(toId(id))))
 		if (!bounds) throw new Error(`None of those shapes exist. Screens: ${this._knownIds(isScreen)}`)
 		const zoom = Number(args.zoomLevel)
-		editor.zoomToBounds(bounds, {
-			inset: 80,
-			animation: { duration: 400 },
-			...(zoom > 0 && zoom !== 1 ? { targetZoom: zoom } : {}),
-		})
+		// Fit above the floating voice dock so the bottom of the screen stays visible.
+		fitBounds(editor, bounds, { inset: 64, ...(zoom > 0 ? { targetZoom: zoom, maxZoom: zoom } : {}) })
 		return { focused: ids }
 	}
 
@@ -867,7 +895,8 @@ export function studentWorkPrompt(editor: Editor, name: string, args: Args): str
 		ids.map((id) => editor.getShape(toId(id))).filter((s): s is TLShape => !!s && authorOf(s)?.kind !== 'agent')
 	let touched: TLShape[] = []
 	let verb = 'change'
-	if (['update_node', 'move_node', 'create_screen'].includes(name)) touched = student([String(args.id ?? '')])
+	if (['update_node', 'move_node', 'create_screen', 'duplicate_screen'].includes(name)) touched = student([String(args.id ?? '')])
+	else if (name === 'add_nodes') touched = student([String(args.parentId ?? '')])
 	else if (name === 'set_theme' && args.screenId && args.screenId !== 'all') touched = student([String(args.screenId)])
 	else if (name === 'delete_nodes') {
 		verb = 'delete'

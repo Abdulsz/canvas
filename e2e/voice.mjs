@@ -1,4 +1,5 @@
-// Live voice test against real Grok: a fake microphone asks a question out loud.
+// Live voice test against real Grok: a fake microphone asks for a design out loud
+// (question.wav: "Hey, can you design a login screen for my coffee app?").
 // Requires the server to run with XAI_API_KEY (Grok voice enabled).
 // Usage: npm run build && npm start &  then  node e2e/voice.mjs
 import { chromium } from 'playwright'
@@ -11,9 +12,12 @@ const browser = await chromium.launch({
 	...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
 	args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}%noloop`, '--autoplay-policy=no-user-gesture-required'],
 })
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['microphone'] })
+const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['microphone'] })
 await ctx.addInitScript(() => {
-	localStorage.setItem('grok-whiteboard:identity', JSON.stringify({ userId: 'alice', name: 'Alice', color: '#ff375f' }))
+	try {
+		localStorage.setItem('grok-whiteboard:identity', JSON.stringify({ userId: 'alice', name: 'Alice', color: '#ff375f' }))
+		localStorage.setItem('grok-design:tab', 'agent')
+	} catch {}
 	// Record when each spoken line actually starts and stops playing.
 	window.__speech = []
 	const play = HTMLMediaElement.prototype.play
@@ -41,14 +45,17 @@ await page.goto(`${BASE}/r/voice${Date.now().toString(36)}`)
 await page.getByTestId('agent-activity').getByText('Ready').waitFor()
 const health = await (await page.request.get(`${BASE}/api/health`)).json()
 mark(`server: ${JSON.stringify(health)}`)
-await page.getByRole('button', { name: 'Talk to Grok' }).click()
+await page.getByTestId('voice-dock-mic').click()
 const micOn = Date.now()
 mark('mic on (fake microphone plays the question after 2.5s of silence)')
 
-await page.getByTestId('agent-log').getByText(/load balancer/i).first().waitFor({ timeout: 30000 })
-mark('student utterance transcribed and sent')
-await page.waitForFunction(() => window.__editor.getCurrentPageShapes().some((s) => s.meta?.author?.kind === 'agent'), null, { timeout: 60000 })
-mark('agent drew its first shape')
+await page.getByTestId('agent-log').getByText(/log ?in/i).first().waitFor({ timeout: 30000 })
+mark('utterance transcribed and sent')
+await page.waitForFunction(() => window.__editor.getCurrentPageShapes().some((s) => s.type === 'ui' && s.props.kind === 'screen' && s.meta?.author?.kind === 'agent'), null, { timeout: 60000 })
+mark('agent created its first screen')
+// The dock captions what the agent is saying.
+await page.getByTestId('voice-caption').waitFor({ timeout: 30000 })
+mark(`dock caption: ${JSON.stringify(await page.getByTestId('voice-caption').innerText())}`)
 await page.waitForFunction(() => document.querySelectorAll('[data-testid=agent-log] .bg-\\[var\\(--bubble-agent\\)\\]').length > 0, null, { timeout: 60000 })
 mark(`agent said: ${JSON.stringify((await page.locator('[data-testid=agent-log] .bg-\\[var\\(--bubble-agent\\)\\]').first().innerText()).slice(0, 120))}`)
 await page.getByTestId('agent-activity').getByText('Ready').waitFor({ timeout: 180000 })
@@ -57,12 +64,13 @@ const questionEnd = micOn + 6000
 const lines = (await page.evaluate(() => window.__speech)).filter((l) => l.start && l.src.includes('/api/tts/'))
 if (process.env.TIMELINE) for (const l of lines) console.log(`   ${((l.start - questionEnd) / 1000).toFixed(1)}s → ${((l.end - questionEnd) / 1000).toFixed(1)}s  ${l.src.split('/').pop()}`)
 if (lines.length) {
-	console.log(`\nTiming: first audio ${((lines[0].start - questionEnd) / 1000).toFixed(1)}s after the student stopped talking`)
+	console.log(`\nTiming: first audio ${((lines[0].start - questionEnd) / 1000).toFixed(1)}s after the user stopped talking`)
 	const gaps = lines.slice(1).map((l, i) => (l.start - (lines[i].end || l.start)) / 1000)
 	console.log(`Silent gaps between ${lines.length} lines (s): ${gaps.map((g) => g.toFixed(1)).join(', ')}  | longest ${Math.max(0, ...gaps).toFixed(1)}s`)
 }
-const shapes = await page.evaluate(() => window.__editor.getCurrentPageShapes().filter((s) => s.meta?.author?.kind === 'agent').length)
-mark(`turn finished: ${shapes} agent shapes`)
+const nodes = await page.evaluate(() => window.__editor.getCurrentPageShapes().filter((s) => s.type === 'ui' && s.meta?.author?.kind === 'agent').length)
+mark(`turn finished: ${nodes} design nodes`)
+if (nodes < 5) throw new Error('the agent did not build a screen')
 await page.evaluate(() => { window.__editor.zoomToFit() })
 await page.waitForTimeout(600)
 await page.screenshot({ path: `${out}/voice-live.png` })

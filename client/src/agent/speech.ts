@@ -4,7 +4,7 @@
 // (falling back to the browser's speech synthesis). Lines play in order.
 //
 // Input: a hands-free "conversation" mode that keeps the mic open with echo
-// cancellation, detects when the student starts and stops talking, and sends
+// cancellation, detects when the user starts and stops talking, and sends
 // each utterance to Grok speech-to-text through the server. Talking while the
 // agent speaks interrupts it (barge-in). Without server voice, the browser's
 // speech recognition is used instead.
@@ -79,7 +79,7 @@ function playNext() {
 		(err: DOMException) => {
 			if (current?.line !== line) return
 			if (err?.name === 'NotAllowedError') {
-				// Autoplay blocked: skip this line rather than stall the lesson; the UI offers to enable sound.
+				// Autoplay blocked: skip this line rather than stall the conversation; the UI offers to enable sound.
 				blockedListener?.(true)
 				finishCurrent()
 			} else audio.onerror?.(new Event('error'))
@@ -131,11 +131,11 @@ export const speechRecognitionSupported = () =>
 
 export const micSupported = () => typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'
 
-// Bias transcription toward the vocabulary of a technical lesson.
+// Bias transcription toward the vocabulary of UI design.
 const KEYTERMS = [
-	'load balancer', 'Redis', 'Kafka', 'PostgreSQL', 'Postgres', 'MySQL', 'MongoDB', 'DynamoDB', 'Cassandra', 'gRPC', 'REST',
-	'GraphQL', 'Kubernetes', 'nginx', 'CDN', 'sharding', 'replication', 'idempotent', 'LeetCode', 'two pointers',
-	'binary search', 'hash map', 'linked list', 'BFS', 'DFS', 'dynamic programming', 'Big O', 'API gateway', 'microservices',
+	'wireframe', 'mockup', 'screen', 'frame', 'auto layout', 'padding', 'navbar', 'tab bar', 'toggle', 'checkbox', 'avatar',
+	'dropdown', 'modal', 'onboarding', 'sign up', 'log in', 'dashboard', 'landing page', 'hero', 'CTA', 'dark mode',
+	'light mode', 'primary color', 'corner radius', 'drop shadow', 'divider', 'iPhone', 'Android', 'Figma',
 ]
 
 async function transcribe(blob: Blob): Promise<string> {
@@ -212,7 +212,7 @@ export async function startConversation(h: Handlers): Promise<Listener> {
 		h.onLevel?.(Math.min(1, rms / 0.15))
 
 		// Stricter while the agent is talking, so its own voice (if any leaks past
-		// echo cancellation) doesn't count as the student speaking.
+		// echo cancellation) doesn't count as the user speaking.
 		const threshold = isSpeaking() ? Math.max(0.05, noise * 6) : Math.max(0.018, noise * 3)
 		if (!speaking) {
 			noise = noise * 0.98 + Math.min(rms, 0.05) * 0.02

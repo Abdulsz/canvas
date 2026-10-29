@@ -15,7 +15,7 @@ export function saveIdentity(name: string): Identity {
 	const existing = loadIdentity()
 	const identity: Identity = {
 		userId: existing?.userId ?? crypto.randomUUID(),
-		name: name.trim().slice(0, 40) || 'Student',
+		name: name.trim().slice(0, 40) || 'Designer',
 		color: existing?.color ?? COLORS[Math.floor(Math.random() * COLORS.length)],
 	}
 	try {

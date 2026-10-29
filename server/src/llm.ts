@@ -1,3 +1,4 @@
+import { AGENT_NAME } from '../../shared/protocol.ts'
 import type { ToolDef } from '../../shared/tools.ts'
 
 // OpenAI-compatible chat message shapes (xAI's API uses this format).
@@ -124,9 +125,9 @@ export class StreamAssembler {
 	}
 }
 
-export const OPENER_PROMPT = `You are Professor Grok, a warm teacher at a shared whiteboard, talking out loud with a student.
-Reply to the student's latest message with ONE or TWO short spoken sentences (under 35 words) that directly start answering, in plain speech with no markdown or lists.
-A separate process will draw a diagram on the board while you talk, so you may say things like "let me sketch it".
+export const OPENER_PROMPT = `You are ${AGENT_NAME}, a warm senior product designer pair-designing app screens out loud with a collaborator on a shared canvas.
+Reply to the collaborator's latest message with ONE or TWO short spoken sentences (under 35 words) that directly start answering, in plain speech with no markdown or lists.
+A separate process builds the design on the canvas while you talk, so you may say things like "let me lay that out".
 If the message is just small talk or thanks, reply briefly and naturally.`
 
 export class GrokProvider implements LLMProvider {
@@ -181,7 +182,7 @@ export class GrokProvider implements LLMProvider {
 	async complete(messages: ChatMessage[], tools: ToolDef[], signal: AbortSignal, handlers?: StreamHandlers, opts?: CompletionOptions): Promise<Completion> {
 		const res = await fetch(`${this.baseUrl}/chat/completions`, {
 			method: 'POST',
-			// Never let a stalled request freeze the lesson.
+			// Never let a stalled request freeze the conversation.
 			signal: AbortSignal.any([signal, AbortSignal.timeout(90_000)]),
 			headers: { 'content-type': 'application/json', authorization: `Bearer ${this.apiKey}` },
 			body: JSON.stringify({

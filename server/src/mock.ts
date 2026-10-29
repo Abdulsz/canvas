@@ -364,8 +364,8 @@ function parseScreens(tool: ChatMessage | undefined): TreeNode[] {
 	} catch {
 		return []
 	}
-	const list: any[] = parsed?.shapes ?? parsed?.data?.shapes ?? parsed?.screens ?? []
-	if (!Array.isArray(list)) return []
+	const body = parsed?.data ?? parsed
+	const list: any[] = [...(Array.isArray(body?.screens) ? body.screens : []), ...(Array.isArray(body?.shapes) ? body.shapes : [])]
 	return list.map((s) => parseNode(s)).filter((s) => s.type === 'screen' || s.children.length)
 }
 
@@ -391,6 +391,28 @@ const mainContent = (screen: TreeNode) =>
 const titleNode = (screen: TreeNode) => {
 	const texts = descendants(screen).filter((n) => n.type === 'text')
 	return texts.find((t) => /title|headline|heading/.test(t.id)) ?? texts[0]
+}
+
+/** Design nodes collaborators changed, newest first, from the trigger's "Recent collaborator edits". */
+function recentEdits(trigger: string): { id: string; by: string }[] {
+	const json = trigger.match(/\nRecent collaborator edits: (\{.*\})/)?.[1]
+	if (!json) return []
+	let byUser: Record<string, { op: string; shape: { id: string; type: string; kind?: string; label?: string } }[]>
+	try {
+		byUser = JSON.parse(json)
+	} catch {
+		return []
+	}
+	const out: { id: string; by: string; rank: number }[] = []
+	for (const [by, entries] of Object.entries(byUser)) {
+		entries.forEach((e, i) => {
+			if (e.op === 'deleted' || e.shape?.type !== 'ui') return
+			// Text-bearing nodes first: re-layout also touches their containers.
+			const rank = (['text', 'button', 'input', 'checkbox'].includes(e.shape.kind ?? '') ? 0 : 1000) + i
+			out.push({ id: String(e.shape.id).replace(/^shape:/, ''), by, rank })
+		})
+	}
+	return out.sort((a, b) => a.rank - b.rank)
 }
 
 // ------------------------------------------------------------------ edit parsing
@@ -488,26 +510,44 @@ export class MockProvider implements LLMProvider {
 		}
 		if (step === 1) {
 			const all = parseScreens(lastTool)
+			const requester = trigger.match(/\n([^\n]+?) pressed "Critique"/)?.[1]?.trim()
+			// What collaborators just changed: critique that first, addressed to whoever changed it.
+			const edited = recentEdits(trigger)
+			let focus: { node: TreeNode; screen: TreeNode; by: string } | undefined
+			for (const e of edited.filter((e) => !requester || e.by === requester)) {
+				for (const screen of all) {
+					const node = screen.id === e.id ? screen : descendants(screen).find((x) => x.id === e.id)
+					if (node) {
+						focus = { node, screen, by: e.by }
+						break
+					}
+				}
+				if (focus) break
+			}
 			const mine = all.filter((s) => s.user)
-			const screens = mine.length ? mine : idle ? [] : all
+			const screens = focus ? [focus.screen] : mine.length ? mine : idle ? [] : all
 			if (!screens.length) {
 				if (idle) return { text: 'SILENT', toolCalls: [] }
 				return { text: "I don't see a design to critique yet. Ask me to build a screen and we can iterate on it.", toolCalls: [] }
 			}
 			const screen = screens[screens.length - 1]
-			const owner: string | undefined = screen.raw?.author?.name ?? screen.raw?.meta?.author?.name
-			const who = screen.user && owner ? `${owner}, ` : ''
-			const title = titleNode(screen) ?? screen
+			const owner: string | undefined = focus?.by ?? screen.raw?.author?.name ?? screen.raw?.meta?.author?.name ?? requester
+			const who = owner ? `${owner}, ` : ''
+			const title = focus?.node ?? titleNode(screen) ?? screen
 			const nodes = descendants(screen)
 			const tinyText = nodes.find((x) => x.type === 'text' && Number(x.raw?.fontSize) > 0 && Number(x.raw?.fontSize) < 14)
 			const smallBtn = nodes.find((x) => x.type === 'button' && Number(x.raw?.h ?? x.raw?.height) > 0 && Number(x.raw?.h ?? x.raw?.height) < 44)
 			const btn = primaryButton(screen)
-			const praiseText = title.text ? `The "${title.text}" title makes the purpose of this screen clear.` : 'The structure of this screen is easy to scan.'
+			const praiseText = focus
+				? `Your change to ${title.text ? `"${title.text}"` : `the ${title.type}`} fits the rest of the screen well.`
+				: title.text
+					? `The "${title.text}" title makes the purpose of this screen clear.`
+					: 'The structure of this screen is easy to scan.'
 			const toolCalls: ToolCall[] = [
 				call('highlight_shapes', { id: 'review_hl_good', shapeIds: [title.id], color: 'green' }),
 				call('add_comment', { id: 'review_praise', targetShapeId: title.id, kind: 'praise', text: praiseText, addressedTo: owner }),
 			]
-			let spoken = `${who}nice work. The title is clear and easy to find.`
+			let spoken = focus ? `${who}nice touch on the ${title.type === 'text' ? 'copy' : title.type}. It reads clearly.` : `${who}nice work. The title is clear and easy to find.`
 			const flagged = smallBtn ?? (tinyText ? tinyText : undefined)
 			if (flagged) {
 				toolCalls.push(
@@ -629,16 +669,9 @@ export class MockProvider implements LLMProvider {
 		if (step === 0) return { text: 'One moment, checking the current design.', toolCalls: [call('get_canvas_state', {})] }
 		if (step > 2) return { text: null, toolCalls: [] }
 		const question = (q: string): Completion => ({ text: q, toolCalls: [] })
-		const screens = parseScreens(lastTool)
-		const screen = screens[screens.length - 1]
-		if (!screen) {
-			if (step === 1) {
-				const { spec, name } = genericScreen(said)
-				return { text: `There is nothing on the canvas to change yet, so I started ${name} for you.`, toolCalls: [call('create_screen', spec)] }
-			}
-			return question('What should this screen be for?')
-		}
+		// Step 2 follows the edit itself (lastTool is its result, not the canvas).
 		if (step === 2) {
+			if (lastTool && /"ok":false/.test(textOf(lastTool))) return question('Okay, I left that as it is. What should we change instead?')
 			const q: Partial<Record<Edit['kind'], string>> = {
 				color: 'How does that look? Want the rest of the accents to match?',
 				rename: 'Better? I can tweak the supporting text to match.',
@@ -646,6 +679,12 @@ export class MockProvider implements LLMProvider {
 				add_component: 'Added. Want it styled differently, or moved higher up?',
 			}
 			return question(q[edit.kind] ?? 'What should we refine next?')
+		}
+		const screens = parseScreens(lastTool)
+		const screen = screens[screens.length - 1]
+		if (!screen) {
+			const { spec, name } = genericScreen(said)
+			return { text: `There is nothing on the canvas to change yet, so I started ${name} for you.`, toolCalls: [call('create_screen', spec)] }
 		}
 
 		switch (edit.kind) {
@@ -661,10 +700,20 @@ export class MockProvider implements LLMProvider {
 			}
 			case 'delete': {
 				const w = edit.what.replace(/\b(please|from the screen|on the screen)\b/g, '').trim()
+				// Look on the newest screen first, then the others.
+				// "the welcome back text" -> match "welcome back" against node text too.
+				const phrases = [w, w.replace(/\s+(text|label|button|input|field|image|toggle|checkbox|icon)$/, '')].filter((p, i, a) => p && a.indexOf(p) === i)
+				let target: TreeNode | undefined
+				for (const p of phrases) {
+					for (const s of [...screens].reverse()) {
+						const nodes = descendants(s)
+						target = nodes.find((x) => x.text && x.text.toLowerCase().includes(p)) ?? nodes.find((x) => x.name.toLowerCase().includes(p) || x.id.toLowerCase().includes(p.replace(/\s+/g, '_')))
+						if (target) break
+					}
+					if (target) break
+				}
 				const nodes = descendants(screen)
-				const byType = nodes.find((x) => x.type === w.split(/\s+/).pop() || x.type === w.replace(/s$/, ''))
-				const byText = nodes.find((x) => x.text && w && x.text.toLowerCase().includes(w)) ?? nodes.find((x) => w && (x.name.toLowerCase().includes(w) || x.id.toLowerCase().includes(w.replace(/\s+/g, '_'))))
-				const target = byText ?? byType
+				target ??= nodes.find((x) => x.type === w.split(/\s+/).pop() || x.type === w.replace(/s$/, ''))
 				if (!target) return question('I could not find that on this screen. Which element do you mean?')
 				return { text: `Removing ${target.text ? `"${target.text}"` : 'it'}.`, toolCalls: [call('delete_nodes', { ids: [target.id] })] }
 			}
@@ -672,12 +721,12 @@ export class MockProvider implements LLMProvider {
 				const parent = mainContent(screen)
 				const id = `added_${edit.component}_${++n}`
 				const nodes: Record<string, Spec> = {
-					button: { id, type: 'button', text: edit.label ?? 'Continue', width: 'fill' },
-					input: { id, type: 'input', icon: 'search', text: edit.label ?? 'Enter text' },
+					button: { id, type: 'button', name: 'Button', text: edit.label ?? 'Continue', width: 'fill' },
+					input: { id, type: 'input', name: 'Input', icon: 'search', text: edit.label ?? 'Enter text' },
 					image: { id, type: 'image', name: 'Image', width: 'fill', height: 160 },
-					toggle: row(id, [txt(`${id}_label`, edit.label ?? 'Enable feature', { width: 'fill' }), { id: `${id}_toggle`, type: 'toggle', checked: true }], { width: 'fill', gap: 12 }),
-					checkbox: { id, type: 'checkbox', text: edit.label ?? 'Remember me', checked: true },
-					text: txt(id, edit.label ?? 'New text', { fontSize: 16 }),
+					toggle: row(id, [txt(`${id}_label`, edit.label ?? 'Enable feature', { width: 'fill' }), { id: `${id}_toggle`, type: 'toggle', name: 'Toggle', checked: true }], { name: 'Toggle row', width: 'fill', gap: 12 }),
+					checkbox: { id, type: 'checkbox', name: 'Checkbox', text: edit.label ?? 'Remember me', checked: true },
+					text: txt(id, edit.label ?? 'New text', { name: 'Text', fontSize: 16 }),
 				}
 				return {
 					text: `Adding a ${edit.component} to the ${parent.name || 'content'} area.`,

@@ -1,8 +1,9 @@
 import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { useSync } from '@tldraw/sync'
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	atom,
+	type Box,
 	createUserId,
 	DefaultStylePanel,
 	DEFAULT_THEME,
@@ -15,11 +16,13 @@ import {
 	type TLAssetStore,
 	type TLShapeId,
 	type TLComponents,
+	type TLUiOverrides,
 	type TLUiStylePanelProps,
 	type TLThemes,
 } from 'tldraw'
 import { AGENT_NAME } from '../../shared/protocol.ts'
 import { registerAuthorship } from './agent/authorship.ts'
+import { fitBounds } from './agent/layout.ts'
 import { CanvasExecutor } from './agent/executor.ts'
 import { useAgent } from './agent/useAgent.ts'
 import { useVoice } from './agent/useVoice.ts'
@@ -48,7 +51,12 @@ const AgentCursorContext = createContext<{ x: number; y: number } | null>(null)
 /** The agent's presence cursor, drawn over the canvas like a collaborator's. */
 function AgentCursor() {
 	const editor = useEditor()
-	const point = useContext(AgentCursorContext)
+	const live = useContext(AgentCursorContext)
+	// Keep the last position while fading out once the agent goes idle.
+	const lastRef = useRef(live)
+	if (live) lastRef.current = live
+	const point = live ?? lastRef.current
+	const visible = !!live
 	const screen = useValue(
 		'agent cursor',
 		() => {
@@ -63,9 +71,11 @@ function AgentCursor() {
 	if (!screen) return null
 	return (
 		<div
-			className="pointer-events-none absolute left-0 top-0 z-[1000] transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
-			style={{ transform: `translate(${screen.x}px, ${screen.y}px)` }}
+			className="pointer-events-none absolute left-0 top-0 z-[1000] transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
+			style={{ transform: `translate(${screen.x}px, ${screen.y}px)`, opacity: visible ? 1 : 0 }}
 			data-testid="agent-cursor"
+			data-visible={visible}
+			aria-hidden={!visible}
 		>
 			<svg width="20" height="20" viewBox="0 0 20 20" className="block drop-shadow-[0_2px_4px_rgba(0,0,0,0.25)]">
 				<defs>
@@ -105,6 +115,22 @@ const components: TLComponents = { InFrontOfTheCanvas: AgentCursor, StylePanel: 
 	// The floating voice dock sits where tldraw puts these on narrow canvases; undo/delete/duplicate stay on keys, the context menu and the main menu.
 	QuickActions: null,
 	ActionsMenu: null,
+}
+// Zoom to fit / to selection keep the content above the floating voice dock.
+const overrides: TLUiOverrides = {
+	actions(editor, actions) {
+		const fit = (bounds: Box | undefined, maxZoom: number) => {
+			if (bounds) fitBounds(editor, bounds, { maxZoom })
+		}
+		actions['zoom-to-fit'] = { ...actions['zoom-to-fit'], onSelect: () => fit(editor.getCurrentPageBounds(), 1) }
+		actions['zoom-to-selection'] = {
+			...actions['zoom-to-selection'],
+			onSelect: () => {
+				if (editor.getSelectedShapeIds().length) fit(editor.getSelectionPageBounds() ?? undefined, Math.max(1, editor.getZoomLevel()))
+			},
+		}
+		return actions
+	},
 }
 // Bundle fonts/icons/translations instead of loading them from tldraw's CDN.
 const assetUrls = getAssetUrlsByImport()
@@ -195,6 +221,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 							themes={themes}
 							licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
 							components={components}
+							overrides={overrides}
 							onMount={(e) => {
 								;(window as any).__editor = e
 								// Used by e2e scripts to drive the canvas like the agent does.

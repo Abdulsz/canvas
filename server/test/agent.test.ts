@@ -233,3 +233,37 @@ test('silent design steps get a short narration from what was built', async () =
 	assert.equal(narrateDrawing([call('create_screen', { name: 'Login' }), call('create_screen', { name: 'Sign up' })]), "Here's the Login screen and the Sign up screen.")
 	assert.equal(narrateDrawing([call('update_node', { id: 'x' }), call('highlight_shapes', {})]), null)
 })
+
+test('critique focuses on the node the requester just edited and addresses them', async () => {
+	const room = new Room('t_crit_edit', null)
+	const agent = new AgentSession(room, new MockProvider())
+	// Bob retitled an agent-made node in the Design panel (updatedBy Bob, author agent).
+	;(room as any).changeLog.push({ op: 'updated', at: Date.now(), author: user('Bob'), shape: { id: 'login_title', type: 'ui', kind: 'text', label: 'Hi there', x: 0, y: 0 } })
+	// get_canvas_state returns screens plus other shapes (a flow arrow), like the real executor.
+	const state = { screens: [loginTree], shapes: [{ id: 'flow_1', type: 'arrow', role: 'flow' }] }
+	const bob = new FakeClient((name) => (name === 'get_canvas_state' ? { ok: true, data: state } : { ok: true, data: {} }))
+	agent.addClient(bob as any)
+	bob.push({ type: 'hello', userId: 'bob', name: 'Bob', color: '#00f' })
+	bob.push({ type: 'check_work', shapeIds: [] })
+	await bob.waitIdle()
+	const comments = bob.toolCalls().filter((c) => c.name === 'add_comment')
+	assert.equal(comments[0].args.targetShapeId, 'login_title')
+	assert.equal(comments[0].args.addressedTo, 'Bob')
+	assert.ok(bob.received.some((m) => m.type === 'agent_say' && /^Bob, nice touch/.test(m.text)))
+})
+
+test('mock finds a node to delete on any screen; a declined change is acknowledged', async () => {
+	const signupTree = { id: 'signup', type: 'screen', name: 'Sign up', children: [{ id: 'signup_title', type: 'text', text: 'Create your account' }] }
+	const room = new Room('t_del', null)
+	const agent = new AgentSession(room, new MockProvider())
+	const bob = new FakeClient((name) =>
+		name === 'get_canvas_state' ? { ok: true, data: { screens: [loginTree, signupTree] } } : name === 'delete_nodes' ? { ok: false, error: 'The user declined this change.' } : { ok: true, data: {} }
+	)
+	agent.addClient(bob as any)
+	bob.push({ type: 'hello', userId: 'bob', name: 'Bob', color: '#00f' })
+	bob.push({ type: 'user_message', text: 'delete the welcome back text', selection: [] })
+	await bob.waitIdle()
+	assert.deepEqual(bob.toolCalls()[1].args, { ids: ['login_title'] })
+	const says = bob.received.filter((m) => m.type === 'agent_say' && !m.ephemeral)
+	assert.ok(says.some((m) => /left that as it is/.test(m.text)))
+})

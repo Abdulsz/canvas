@@ -237,7 +237,7 @@ export const READING_TOOLS: ToolDef[] = [
 	{
 		name: 'get_canvas_state',
 		description:
-			'Returns the design: every screen as a nested tree of nodes (id, type, name, text, x/y relative to the parent, w/h, width/height sizing when not fixed, colors, auto layout, author), plus any other shapes (sketches, notes, arrows) as a flat list. Pass shapeIds to get only those screens/nodes (with their subtrees).',
+			'Returns the design: every screen as a nested tree of nodes (id, type, name, text, w/h, colors, auto layout, author), plus any other shapes (sketches, notes, arrows) as a flat list. To stay compact, props equal to the kind defaults are omitted (e.g. a button without fill uses $primary; width/height sizing appears only when it differs from the default, "fixed" meaning w/h are fixed numbers), and x/y (relative to the parent) appear only where the parent has no auto layout. Pass shapeIds to get only those screens/nodes (with their subtrees).',
 		parameters: {
 			type: 'object',
 			properties: {
