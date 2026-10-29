@@ -1,7 +1,7 @@
 import { Box, type Editor, type TLShape, type TLShapeId } from 'tldraw'
 import { DEVICES, treeToHtml, type Device, type UiKind, type UiNodeSpec } from '../../../shared/design.ts'
 import type { CanvasExecutor } from '../agent/executor.ts'
-import { fitBounds } from '../agent/layout.ts'
+import { dockReserve, fitVisible } from './camera.ts'
 import { bareId, isContainer, isScreen, isUi, readUiTree, screenOf, screenTheme, uiChildren } from '../design/tree.ts'
 
 // User actions of the app shell (Insert menu, Layers, Design panel, Export).
@@ -126,11 +126,13 @@ export const COMPONENTS: { key: ComponentKey; label: string; kind: UiKind; spec:
 export function revealShape(editor: Editor, id: TLShapeId, force = false) {
 	const bounds = editor.getShapePageBounds(id)
 	if (!bounds) return
-	const vp = editor.getViewportPageBounds()
+	// What is actually visible: the viewport minus the strip under the voice dock.
+	const vp = editor.getViewportPageBounds().clone()
+	vp.h = Math.max(1, vp.h - dockReserve(editor) / editor.getZoomLevel())
 	if (!force && Box.Contains(vp, bounds)) return
 	const shape = editor.getShape(id)
 	if (isScreen(shape) || bounds.w > vp.w * 0.9 || bounds.h > vp.h * 0.9) {
-		fitBounds(editor, bounds, { inset: 56, maxZoom: Math.min(1, Math.max(editor.getZoomLevel() * 1.5, 0.25)) })
+		fitVisible(editor, bounds, { maxZoom: Math.min(1, Math.max(editor.getZoomLevel() * 1.5, 0.25)) })
 	} else editor.centerOnPoint(bounds.center, { animation: { duration: 320 } })
 }
 

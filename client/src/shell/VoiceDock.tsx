@@ -86,13 +86,13 @@ export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentS
 	return (
 		<div className="pointer-events-none absolute inset-x-0 bottom-[72px] z-[300] flex justify-center px-3" data-testid="voice-dock">
 			{/* 16px above tldraw's tool row (56px from the canvas bottom). */}
-			<div className="voice-dock pointer-events-auto relative flex max-w-[min(600px,100%)] items-center gap-2.5 rounded-full p-1.5 pl-2 md:gap-3" data-phase={phase}>
-				<button className="tap shrink-0 rounded-full" onClick={onOpenAgent} title={`Open the ${AGENT_NAME} conversation`} aria-label={`Open ${AGENT_NAME} conversation`}>
+			<div className="voice-dock pointer-events-auto relative flex max-w-[min(600px,100%)] items-center gap-2 rounded-full p-1.5 md:gap-2.5" data-phase={phase}>
+				<button className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-transform duration-150 active:scale-95" onClick={onOpenAgent} title={`Open the ${AGENT_NAME} conversation`} aria-label={`Open ${AGENT_NAME} conversation`}>
 					<Orb state={voice.orbState} size={36} />
 				</button>
 				{active ? (
-					<button className="fade-up flex min-w-0 max-w-[420px] flex-col items-start text-left" onClick={onOpenAgent}>
-						<span className="voice-phase flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.06em]">{PHASE_LABEL[phase]}</span>
+					<button className="fade-up flex min-h-11 min-w-0 max-w-[420px] flex-col items-start justify-center text-left" onClick={onOpenAgent}>
+						<span className="voice-phase flex items-center gap-1.5 text-[12px] font-semibold uppercase tracking-[0.06em]">{PHASE_LABEL[phase]}</span>
 						<span
 							className={`line-clamp-2 text-[13px] leading-[1.35] text-[var(--label)] md:text-[14px] ${phase === 'thinking' ? 'shimmer-text' : ''}`}
 							data-testid="voice-caption"
@@ -103,7 +103,7 @@ export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentS
 						</span>
 					</button>
 				) : (
-					<button className="flex min-w-0 flex-col items-start pr-1 text-left" onClick={voice.supported ? voice.toggleMic : onOpenAgent}>
+					<button className="flex min-h-11 min-w-0 flex-col items-start justify-center pr-1 text-left" onClick={voice.supported ? voice.toggleMic : onOpenAgent}>
 						<span className="text-[14px] font-semibold leading-tight tracking-[-0.01em] text-[var(--label)]">Talk to design</span>
 						<span className="hidden text-[12px] leading-tight text-[var(--label-2)] sm:block">Tap the mic and describe a screen</span>
 					</button>
@@ -111,7 +111,7 @@ export function VoiceDock({ state, voice, onOpenAgent, onStop }: { state: AgentS
 				{phase !== 'idle' && phase !== 'offline' && <Meter phase={phase} level={voice.level} />}
 				{state.busy && (
 					<button
-						className="tap pop flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--fill)] text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
+						className="tap pop flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--fill)] text-[var(--label)] transition-colors duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
 						onClick={onStop}
 						title="Stop"
 						aria-label="Stop agent"

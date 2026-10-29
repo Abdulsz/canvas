@@ -135,7 +135,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 						<span className="truncate whitespace-nowrap max-md:hidden">{AGENT_NAME}</span>
 						{state.provider === 'mock' && (
 							<span
-								className="shrink-0 rounded-full bg-[color-mix(in_srgb,var(--orange)_16%,transparent)] px-1.5 py-px text-[11px] font-semibold uppercase tracking-[0.04em] text-[color-mix(in_srgb,var(--orange)_75%,var(--label))]"
+								className="shrink-0 rounded-full bg-[var(--demo-bg)] px-2 py-px text-[12px] font-semibold text-[var(--demo-fg)]"
 								title="A scripted agent is answering. Add an XAI_API_KEY on the server to use Grok."
 							>
 								Demo
@@ -147,7 +147,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					</div>
 				</div>
 				<button
-					className="tap flex h-8 w-8 items-center justify-center rounded-full text-[var(--label-2)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill)] active:scale-95"
+					className="tap flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--label-2)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill)] active:scale-95 active:bg-[var(--press)] md:-mr-1 md:h-8 md:w-8"
 					onClick={() => {
 						setMuted(!muted)
 						setMutedState(!muted)
@@ -174,7 +174,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 								key={m.id}
 								role="radio"
 								aria-checked={state.mode === m.id}
-								className={`tap relative z-10 rounded-[7px] py-[4px] text-[12px] transition-colors duration-150 max-md:py-[7px] ${
+								className={`tap relative z-10 h-11 rounded-[7px] text-[13px] transition-[color,transform] duration-150 active:scale-[0.96] md:h-7 md:text-[12px] ${
 									state.mode === m.id ? 'font-semibold text-[var(--label)]' : 'font-medium text-[var(--label-2)] hover:text-[var(--label)]'
 								}`}
 								onClick={() => actions.setMode(m.id)}
@@ -188,7 +188,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 
 				<div className="flex gap-2 max-md:shrink-0">
 					<button
-						className="tap flex h-9 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[14px] font-semibold max-md:px-4 text-[var(--on-accent)] shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_rgba(0,0,0,0.14)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
+						className="tap flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-[var(--accent)] text-[14px] font-semibold max-md:px-4 md:h-9 text-[var(--on-accent)] shadow-[0_1px_2px_rgba(0,0,0,0.12),0_4px_14px_rgba(0,0,0,0.14)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-[0.98] disabled:opacity-40"
 						onClick={voice.critique}
 						disabled={!state.connected}
 						title={`Ask ${AGENT_NAME} for a design critique (only the selected nodes, if any)`}
@@ -198,7 +198,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					</button>
 					{state.busy && (
 						<button
-							className="tap pop flex h-9 w-9 items-center justify-center rounded-full bg-[var(--fill)] text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
+							className="tap pop flex h-11 w-11 items-center justify-center rounded-full bg-[var(--fill)] md:h-9 md:w-9 text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
 							onClick={actions.stop}
 							title="Stop"
 							aria-label="Stop"
@@ -211,7 +211,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<label className="flex cursor-pointer items-center justify-between gap-3 px-0.5">
 						<span className="min-w-0">
 							<span className="block text-[13px] font-medium text-[var(--label)]">
-								Live voice <span className="ml-1 rounded-full bg-[var(--fill)] px-1.5 py-px text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--label-2)]">Beta</span>
+								Live voice <span className="ml-1 rounded-full bg-[var(--fill)] px-1.5 py-px text-[12px] font-semibold uppercase tracking-[0.04em] text-[var(--label-2)]">Beta</span>
 							</span>
 							<span className="block text-[12px] text-[var(--label-2)]">Speech-to-speech: faster replies, just you and {AGENT_NAME}</span>
 						</span>
@@ -234,19 +234,19 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 			{/* Suggestions awaiting a decision */}
 			{suggestions.length > 0 && editor && (
 				<div className="hairline-b space-y-2 px-4 py-3">
-					<div className="text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Suggestions</div>
+					<div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--label-3)]">Suggestions</div>
 					{suggestions.map((s) => (
 						<div key={s.id} className="pop rounded-2xl bg-[var(--card)] p-3 shadow-[var(--shadow-control)]">
 							<div className="text-[13px] leading-snug text-[var(--label)]">{s.explanation || s.id}</div>
 							<div className="mt-2.5 flex gap-2">
 								<button
-									className="tap h-8 rounded-full bg-[var(--accent)] px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-95"
+									className="tap h-11 rounded-full bg-[var(--accent)] px-4 md:h-8 md:px-3.5 text-[13px] font-semibold text-[var(--on-accent)] transition-[background-color,transform] duration-150 hover:bg-[var(--accent-hover)] active:scale-95"
 									onClick={() => acceptSuggestion(editor, s.id, { kind: 'user', id: me.userId, name: me.name })}
 								>
 									Accept
 								</button>
 								<button
-									className="tap h-8 rounded-full bg-[var(--fill)] px-3.5 text-[13px] font-medium text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
+									className="tap h-11 rounded-full bg-[var(--fill)] px-4 md:h-8 md:px-3.5 text-[13px] font-medium text-[var(--label)] transition-[background-color,transform] duration-150 hover:bg-[var(--fill-strong)] active:scale-95"
 									onClick={() => dismissSuggestion(editor, s.id)}
 								>
 									Dismiss
@@ -311,7 +311,7 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<button
 						type="button"
 						onClick={voice.toggleMic}
-						className={`tap relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-[background-color,transform] duration-150 active:scale-95 ${
+						className={`tap relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-[background-color,transform] duration-150 active:scale-95 md:h-9 md:w-9 ${
 							listening ? 'bg-[var(--red)] text-white' : 'bg-[var(--fill)] text-[var(--label)] hover:bg-[var(--fill-strong)]'
 						}`}
 						title={listening ? 'Stop listening' : 'Talk to Grok'}
@@ -328,9 +328,9 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 						<MicIcon className="relative h-[18px] w-[18px]" />
 					</button>
 				)}
-				<div className="flex h-10 min-w-0 flex-1 items-center rounded-full bg-[var(--card)] pl-3.5 pr-1 shadow-[0_0_0_0.5px_var(--separator)] transition-shadow duration-150 focus-within:shadow-[0_0_0_1.5px_var(--focus)] md:h-9">
+				<div className="flex h-11 min-w-0 flex-1 items-center rounded-full bg-[var(--card)] pl-4 shadow-[0_0_0_0.5px_var(--separator)] transition-shadow duration-150 focus-within:shadow-[0_0_0_1.5px_var(--focus)] md:h-9 md:pl-3.5 md:pr-0.5">
 					<input
-						className="min-w-0 flex-1 bg-transparent text-[16px] md:text-[14px] text-[var(--label)] outline-none focus-visible:outline-none placeholder:text-[var(--label-3)]"
+						className="h-full min-w-0 flex-1 bg-transparent text-[16px] md:text-[14px] text-[var(--label)] outline-none focus-visible:outline-none placeholder:text-[var(--label-3)]"
 						placeholder={
 							live.active
 								? 'Live — just talk, or type'
@@ -350,10 +350,13 @@ export function AgentPanel({ me, editor, state, actions, voice }: Props) {
 					<button
 						type="submit"
 						disabled={!text.trim()}
-						className="tap flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] transition-[opacity,transform] duration-150 enabled:active:scale-90 disabled:scale-75 disabled:opacity-0 md:h-7 md:w-7"
+						className="group/send flex h-11 w-11 shrink-0 items-center justify-center rounded-full md:h-8 md:w-8"
 						aria-label="Send"
+						title="Send (Enter)"
 					>
-						<SendIcon className="h-4 w-4" />
+						<span className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--accent)] text-[var(--on-accent)] transition-[background-color,color,transform] duration-150 group-enabled/send:group-active/send:scale-90 group-disabled/send:bg-[var(--fill)] group-disabled/send:text-[var(--label-3)] md:h-7 md:w-7">
+							<SendIcon className="h-4 w-4" />
+						</span>
 					</button>
 				</div>
 			</form>

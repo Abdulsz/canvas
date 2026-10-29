@@ -3,7 +3,7 @@ import { useSync } from '@tldraw/sync'
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import {
 	atom,
-	type Box,
+	Box,
 	createUserId,
 	DefaultStylePanel,
 	DEFAULT_THEME,
@@ -22,7 +22,6 @@ import {
 } from 'tldraw'
 import { AGENT_NAME } from '../../shared/protocol.ts'
 import { registerAuthorship } from './agent/authorship.ts'
-import { fitBounds } from './agent/layout.ts'
 import { CanvasExecutor } from './agent/executor.ts'
 import { useAgent } from './agent/useAgent.ts'
 import { useVoice } from './agent/useVoice.ts'
@@ -36,6 +35,8 @@ import { DesignPanel } from './shell/DesignPanel.tsx'
 import { LayersPanel } from './shell/LayersPanel.tsx'
 import { TopBar } from './shell/TopBar.tsx'
 import { VoiceDock } from './shell/VoiceDock.tsx'
+import { fitVisible } from './shell/camera.ts'
+import { CaretIcon } from './components/icons.tsx'
 
 const assets: TLAssetStore = {
 	async upload(_asset, file) {
@@ -64,8 +65,13 @@ function AgentCursor() {
 			if (!point) return null
 			editor.getCamera() // re-render on camera moves
 			const p = editor.pageToViewport(point)
+			const vw = editor.getViewportScreenBounds().w
+			// The name tag follows the zoom (within 70-100%) so it never dwarfs a
+			// zoomed-out screen; narrow canvases show just the orb.
+			const scale = Math.max(0.7, Math.min(1, editor.getZoomLevel() * 1.4))
+			const compact = vw < 600
 			// Flip the name tag to the left near the right edge so it isn't clipped.
-			return { x: p.x, y: p.y, flip: p.x > editor.getViewportScreenBounds().w - 190 }
+			return { x: p.x, y: p.y, scale, compact, flip: p.x > vw - (compact ? 60 : 190) }
 		},
 		[editor, point]
 	)
@@ -81,16 +87,20 @@ function AgentCursor() {
 			<svg width="20" height="20" viewBox="0 0 20 20" className="block drop-shadow-[0_2px_4px_rgba(0,0,0,0.25)]">
 				<defs>
 					<linearGradient id="agent-cursor-fill" x1="0" y1="0" x2="1" y2="1">
-						<stop offset="0" stopColor="#5e5ce6" />
-						<stop offset="1" stopColor="#bf5af2" />
+						<stop offset="0" stopColor="#5856d6" />
+						<stop offset="1" stopColor="#a347d9" />
 					</linearGradient>
 				</defs>
 				<path d="M2 2 L18 8.5 L10.5 10.5 L8.5 18 Z" fill="url(#agent-cursor-fill)" stroke="white" strokeWidth="1.5" strokeLinejoin="round" />
 			</svg>
 			<div className={`-mt-0.5 flex ${screen.flip ? '-translate-x-full -ml-1' : 'ml-4'}`}>
-				<div className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-gradient-to-br from-[#5e5ce6] to-[#bf5af2] py-1 pl-1 pr-2.5 text-[12px] font-semibold text-white shadow-[0_4px_14px_rgba(94,92,230,0.35)]">
-					<Orb state="speaking" size={16} />
-					{AGENT_NAME}
+				<div
+					className={`flex items-center gap-1.5 whitespace-nowrap rounded-full bg-gradient-to-br from-[#5856d6] to-[#a347d9] text-[12px] font-semibold text-white shadow-[0_3px_10px_rgba(94,92,230,0.32)] ${screen.compact ? 'p-[3px]' : 'py-1 pl-1 pr-2.5'}`}
+					style={{ transform: `scale(${screen.compact ? 1 : screen.scale})`, transformOrigin: screen.flip ? 'top right' : 'top left' }}
+					data-testid="agent-cursor-label"
+				>
+					<Orb state="speaking" size={screen.compact ? 12 : 16} />
+					{!screen.compact && AGENT_NAME}
 				</div>
 			</div>
 		</div>
@@ -121,7 +131,7 @@ const components: TLComponents = { InFrontOfTheCanvas: AgentCursor, StylePanel: 
 const overrides: TLUiOverrides = {
 	actions(editor, actions) {
 		const fit = (bounds: Box | undefined, maxZoom: number) => {
-			if (bounds) fitBounds(editor, bounds, { maxZoom })
+			if (bounds) fitVisible(editor, bounds, { maxZoom })
 		}
 		actions['zoom-to-fit'] = { ...actions['zoom-to-fit'], onSelect: () => fit(editor.getCurrentPageBounds(), 1) }
 		actions['zoom-to-selection'] = {
@@ -178,7 +188,31 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 		shapeUtils: syncShapeUtils,
 	})
 	const [editor, setEditor] = useState<Editor | null>(null)
-	const agent = useAgent(roomId, me, editor)
+	const phone = useMedia(PHONE)
+	// Phones: the right panel is a bottom sheet: peeking (tabs only), half open, or full.
+	const [sheet, setSheet] = useState<'peek' | 'half' | 'full'>('half')
+	const sheetRef = useRef(sheet)
+	sheetRef.current = sheet
+	// The agent framed something on this tab: refit it into what is visible here.
+	// On phones the sheet first drops to its peek height so the screen gets the
+	// whole canvas (the dock keeps the captions), then the fit runs once the
+	// canvas has grown.
+	const agent = useAgent(roomId, me, editor, {
+		onFocus: (ids, zoomLevel) => {
+			if (!editor) return
+			const fit = () => {
+				const shapes = ids.map((id) => editor.getShape((id.startsWith('shape:') ? id : `shape:${id}`) as TLShapeId))
+				const boxes = shapes.flatMap((sh) => (sh ? [editor.getShapePageBounds(sh)] : [])).filter((b): b is Box => !!b)
+				if (!boxes.length) return
+				const bounds = Box.Common(boxes)
+				fitVisible(editor, bounds, zoomLevel ? { targetZoom: zoomLevel, maxZoom: zoomLevel } : {})
+			}
+			if (window.matchMedia(PHONE).matches && sheetRef.current !== 'peek') {
+				setSheet('peek')
+				setTimeout(fit, 320)
+			} else fit()
+		},
+	})
 	const voice = useVoice(editor, me, agent.state, agent.actions)
 	// The shell's edits (Design panel, Layers, Insert) run through the agent's
 	// executor as the local user, so layout logic lives in one place.
@@ -193,9 +227,6 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 			return 'agent'
 		}
 	})
-	const phone = useMedia(PHONE)
-	// Phones: the right panel is a bottom sheet: peeking (tabs only), half open, or full.
-	const [sheet, setSheet] = useState<'peek' | 'half' | 'full'>('half')
 	const setTab = (t: Tab) => {
 		setTabState(t)
 		setSheet((s) => (s === 'peek' ? 'half' : s))
@@ -240,7 +271,16 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 					<LayersPanel editor={editor} exec={userExec} onClose={layersOpen ? () => setLayersOpen(false) : undefined} />
 				</div>
 
-				<div className="relative mx-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-[16px] shadow-[var(--shadow-panel)] md:mx-0" data-testid="canvas">
+				<div
+					className="relative mx-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-[16px] shadow-[var(--shadow-panel)] md:mx-0"
+					data-testid="canvas"
+					// Phones: working on the canvas lowers the sheet to its peek height (the dock and its captions stay).
+					onPointerDownCapture={(e) => {
+						if (!phone || sheetRef.current === 'peek') return
+						if ((e.target as Element).closest('[data-testid="voice-dock"]')) return
+						setSheet('peek')
+					}}
+				>
 					<AgentCursorContext.Provider value={agent.state.agentCursor}>
 						<Tldraw
 							store={store}
@@ -268,17 +308,15 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 				{/* Right: Design | Agent. On phones, a bottom sheet with a grab handle. */}
 				<aside
 					className={`flex w-full shrink-0 flex-col overflow-hidden rounded-t-[20px] bg-[var(--material-thick)] text-[var(--label)] shadow-[var(--shadow-panel)] backdrop-blur-[24px] transition-[height] duration-250 ease-[cubic-bezier(0.2,0.8,0.2,1)] md:h-full md:w-[300px] md:rounded-[16px] lg:w-[320px] ${
-						peek ? 'h-[calc(64px+env(safe-area-inset-bottom))]' : sheet === 'full' && phone ? 'h-[78dvh]' : 'h-[40dvh] min-h-[300px]'
+						peek ? 'h-[calc(68px+env(safe-area-inset-bottom))]' : sheet === 'full' && phone ? 'h-[78dvh]' : 'h-[40dvh] min-h-[300px]'
 					}`}
 					data-sheet={phone ? sheet : undefined}
 					data-testid="side-panel"
 				>
-					<button
-						type="button"
-						className="sheet-handle tap flex h-5 w-full shrink-0 touch-none items-end justify-center md:hidden"
-						aria-label={peek ? 'Expand panel' : 'Collapse panel'}
-						aria-expanded={!peek}
-						title="Drag to resize"
+					{/* Grab strip for dragging (pointer only); the labelled 44px toggle at the end of the tab row is its accessible twin. */}
+					<div
+						className="sheet-handle flex h-4 w-full shrink-0 touch-none items-end justify-center md:hidden"
+						aria-hidden
 						onPointerDown={(e) => (drag.current = e.clientY)}
 						onPointerUp={(e) => {
 							const dy = drag.current === null ? 0 : e.clientY - drag.current
@@ -287,21 +325,15 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 							else if (dy < -24) setSheet((s) => (s === 'peek' ? 'half' : 'full'))
 							else setSheet(peek ? 'half' : 'peek')
 						}}
-						onKeyDown={(e) => {
-							if (e.key === 'Enter' || e.key === ' ') {
-								e.preventDefault()
-								setSheet(peek ? 'half' : 'peek')
-							}
-						}}
 					/>
-					<div className="hairline-b flex h-11 shrink-0 items-center gap-1 px-2 md:h-10" role="tablist" aria-label="Panels">
+					<div className="hairline-b flex h-[52px] shrink-0 items-center gap-1 px-2 md:h-11" role="tablist" aria-label="Panels">
 						{(['design', 'agent'] as const).map((t) => (
 							<button
 								key={t}
 								role="tab"
 								aria-selected={tab === t}
-								className={`tap relative flex h-8 items-center gap-1.5 rounded-[8px] px-3 text-[13px] transition-colors duration-150 md:h-7 md:rounded-[7px] md:px-2.5 md:text-[12px] ${
-									tab === t ? 'bg-[var(--fill)] font-semibold text-[var(--label)]' : 'font-medium text-[var(--label-2)] hover:text-[var(--label)]'
+								className={`tap relative flex h-11 items-center gap-1.5 rounded-[10px] px-3.5 text-[14px] transition-[background-color,color,transform] duration-150 active:scale-[0.97] active:bg-[var(--press)] md:h-8 md:rounded-[8px] md:px-3 md:text-[13px] ${
+									tab === t ? 'bg-[var(--fill)] font-semibold text-[var(--label)]' : 'font-medium text-[var(--label-2)] hover:bg-[var(--fill-2)] hover:text-[var(--label)]'
 								}`}
 								onClick={() => setTab(t)}
 							>
@@ -312,7 +344,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 						))}
 						{tab === 'design' && (
 							<button
-								className="tap ml-auto flex h-7 min-w-0 max-w-[55%] items-center gap-1.5 truncate rounded-[7px] px-2 text-[12px] text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill-2)]"
+								className="tap ml-auto flex h-11 min-w-0 max-w-[55%] items-center gap-1.5 truncate rounded-[10px] px-2.5 text-[13px] text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill-2)] active:bg-[var(--press)] max-md:max-w-[40%] md:h-8 md:rounded-[8px] md:text-[12px]"
 								onClick={() => setTab('agent')}
 								title={voice.status}
 								data-testid="agent-status-strip"
@@ -321,6 +353,16 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 								<span className="truncate">{voice.status}</span>
 							</button>
 						)}
+						<button
+							type="button"
+							className={`tap flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] active:bg-[var(--press)] md:hidden ${tab === 'design' ? '' : 'ml-auto'}`}
+							aria-label={peek ? 'Expand panel' : 'Collapse panel'}
+							aria-expanded={!peek}
+							onClick={() => setSheet(peek ? 'half' : 'peek')}
+							data-testid="sheet-toggle"
+						>
+							<CaretIcon className={`h-4 w-4 transition-transform duration-200 ${peek ? '-rotate-90' : 'rotate-90'}`} />
+						</button>
 					</div>
 					<div className={`${tab === 'design' && !peek ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} role="tabpanel" aria-label="Design">
 						<DesignPanel editor={editor} exec={userExec} onOpenCode={setCodeFor} />

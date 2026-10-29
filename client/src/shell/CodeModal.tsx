@@ -69,7 +69,7 @@ export function CodeModal({ editor, id, onClose }: { editor: Editor; id: TLShape
 				<header className="hairline-b flex h-12 shrink-0 items-center gap-3 px-4">
 					<div className="min-w-0 flex-1">
 						<div className="truncate text-[14px] font-semibold tracking-[-0.01em]">{code.name}</div>
-						<div className="text-[11px] text-[var(--label-3)]">HTML + CSS · auto layout as flexbox, tokens as CSS variables · {lines} lines</div>
+						<div className="text-[12px] text-[var(--label-3)]">HTML + CSS · auto layout as flexbox, tokens as CSS variables · {lines} lines</div>
 					</div>
 					<div className="grid h-7 grid-cols-2 rounded-[7px] bg-[var(--fill-2)] p-[2px] md:hidden">
 						{(['code', 'preview'] as const).map((v) => (
@@ -118,7 +118,7 @@ export function CodeModal({ editor, id, onClose }: { editor: Editor; id: TLShape
 						</pre>
 					</div>
 					<div ref={paneRef} className={`hairline-l min-h-0 w-full flex-col bg-[#e9eaee] md:flex md:w-[44%] ${view === 'code' ? 'hidden' : 'flex'}`}>
-						<div className="flex h-8 shrink-0 items-center px-3 text-[11px] font-medium uppercase tracking-[0.06em] text-[#6b7280]">Preview</div>
+						<div className="flex h-8 shrink-0 items-center px-3 text-[12px] font-medium uppercase tracking-[0.06em] text-[#6b7280]">Preview</div>
 						<iframe title="Preview" className="min-h-0 flex-1 border-0" srcDoc={code.html.replace('min-height: 100vh; display: grid; place-items: center;', `min-height: 100vh; display: grid; place-items: start center; padding: 8px 0 24px; zoom: ${zoom.toFixed(3)};`)} sandbox="" />
 					</div>
 				</div>

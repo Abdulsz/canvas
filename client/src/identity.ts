@@ -3,6 +3,13 @@ export type Identity = { userId: string; name: string; color: string }
 const KEY = 'grok-whiteboard:identity'
 const COLORS = ['#e03131', '#1971c2', '#2f9e44', '#f08c00', '#0c8599', '#c2255c', '#5f3dc4', '#495057']
 
+const ADJECTIVES = ['Bright', 'Calm', 'Clever', 'Bold', 'Swift', 'Sunny', 'Lucky', 'Quiet', 'Brave', 'Witty']
+const ANIMALS = ['Otter', 'Falcon', 'Panda', 'Fox', 'Heron', 'Lynx', 'Koala', 'Robin', 'Badger', 'Dolphin']
+const pick = <T,>(xs: T[]) => xs[Math.floor(Math.random() * xs.length)]
+
+/** A friendly default display name, so the first run is one click ("Swift Otter"). */
+export const suggestName = () => `${pick(ADJECTIVES)} ${pick(ANIMALS)}`
+
 export function loadIdentity(): Identity | null {
 	try {
 		const raw = localStorage.getItem(KEY)
