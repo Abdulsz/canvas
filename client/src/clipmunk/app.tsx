@@ -154,7 +154,6 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 						components={components}
 						onMount={(e) => {
 							e.user.updateUserPreferences({ colorScheme: 'system' })
-							;(window as any).__videoEditor = e
 							const off = registerAuthorship(e, ME)
 							syncViewport(e)
 							setup?.({ editor: e, exec: new CanvasExecutor(e) })
