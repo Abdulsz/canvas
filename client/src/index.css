@@ -144,7 +144,6 @@ button:disabled {
 @layer base {
 	button:not(:disabled):not(.tl-container *):active {
 		opacity: 0.72;
-		transition: opacity 0ms;
 	}
 	button:not(:disabled):not(.tl-container *) {
 		-webkit-tap-highlight-color: transparent;
@@ -463,9 +462,112 @@ button:disabled {
 	}
 }
 
+/* Layers rows: 28px with a 24px caret; touch rows are 44px with a 32px caret (44px hit via .tap). */
+.layer-row {
+	--indent: 12px;
+	--caret: 24px;
+}
 @media (pointer: coarse) {
 	.layer-row {
-		height: 40px;
+		height: 44px;
+		--indent: 14px;
+		--caret: 32px;
+	}
+}
+.indent-guide {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	width: 1px;
+	background: var(--separator);
+	pointer-events: none;
+}
+
+/* Insert menu anchor: a small notch pointing at the trigger, same surface as the menu. */
+.menu-arrow {
+	position: absolute;
+	z-index: 601;
+	left: 50%;
+	top: calc(100% + 6px - 5px);
+	width: 10px;
+	height: 10px;
+	margin-left: -5px;
+	background: var(--menu);
+	border-top-left-radius: 2px;
+	box-shadow: -0.5px -0.5px 0 var(--separator);
+	transform: rotate(45deg);
+	pointer-events: none;
+}
+
+/*
+ * Building progress: an indeterminate bar along the voice dock's bottom edge
+ * while the agent streams a screen in, and a light sweep over a skeleton
+ * screen until its real content replaces it. Static under reduced motion.
+ */
+.build-bar {
+	position: absolute;
+	left: 22px;
+	right: 22px;
+	bottom: 3px;
+	height: 2px;
+	border-radius: 2px;
+	overflow: hidden;
+	background: color-mix(in srgb, var(--agent-1) 18%, transparent);
+	pointer-events: none;
+}
+.build-bar::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	width: 40%;
+	border-radius: inherit;
+	background: linear-gradient(90deg, transparent, var(--agent-1), var(--agent-2), transparent);
+	animation: build-slide 1.4s var(--ease-out) infinite;
+}
+@keyframes build-slide {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(250%);
+	}
+}
+.skeleton-shimmer {
+	position: absolute;
+	overflow: hidden;
+	pointer-events: none;
+	border-radius: 4px;
+	box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--agent-1) 45%, transparent);
+}
+.skeleton-shimmer::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+	background-size: 250% 100%;
+	animation: skeleton-sweep 1.6s linear infinite;
+}
+.tl-theme__dark .skeleton-shimmer::after,
+.skeleton-shimmer[data-dark='true']::after {
+	background-image: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.1) 50%, transparent 70%);
+}
+@keyframes skeleton-sweep {
+	from {
+		background-position: 150% 0;
+	}
+	to {
+		background-position: -100% 0;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.build-bar::after {
+		animation: none !important;
+		width: 100%;
+		opacity: 0.6;
+	}
+	.skeleton-shimmer::after {
+		animation: none !important;
+		background: none;
 	}
 }
 
@@ -511,8 +613,22 @@ button:disabled {
 /* Press feedback for tldraw's toolbar and menus, matching the shell's buttons. */
 .tl-container .tlui-button:not(:disabled):active {
 	transform: scale(0.94);
-	transition: transform 60ms var(--ease-out);
 }
 .tl-container .tlui-button {
-	transition: transform 150ms var(--ease-out);
+	transition:
+		transform 150ms var(--ease-out),
+		background-color 150ms var(--ease-out),
+		color 150ms var(--ease-out);
+}
+
+/*
+ * Shell buttons (top bar, chips, tabs, dock, panels) press and release over
+ * 150ms: the dim, the scale and the color change together instead of snapping.
+ * Unlayered so it wins over each button's own transition list; reduced motion
+ * still collapses it to 1ms.
+ */
+button:not(.tl-container *) {
+	transition-property: color, background-color, border-color, box-shadow, opacity, transform, translate, scale;
+	transition-duration: 150ms;
+	transition-timing-function: var(--ease-out);
 }

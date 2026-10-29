@@ -4,12 +4,12 @@ import { DEVICES, type Device } from '../../../shared/design.ts'
 import type { Participant } from '../../../shared/protocol.ts'
 import type { CanvasExecutor } from '../agent/executor.ts'
 import { Avatar } from '../components/AgentPanel.tsx'
-import { CheckIcon, CodeIcon, DownloadIcon, FileIcon, LayersIcon, LinkIcon, MoonIcon, PlusIcon, SunIcon } from '../components/icons.tsx'
+import { CheckIcon, CodeIcon, DownloadIcon, FileIcon, LayersIcon, LinkIcon, PlusIcon, ScreenThemeIcon } from '../components/icons.tsx'
 import { screenTheme } from '../design/tree.ts'
 import type { Identity } from '../identity.ts'
 import { activeScreen, COMPONENTS, DEVICE_LABELS, exportPng, insertComponent, insertScreen } from './actions.ts'
 import { MenuItem, menuPanel, usePopover } from './controls.tsx'
-import { KindIcon } from './KindIcon.tsx'
+import { KindIcon, RoleIcon } from './KindIcon.tsx'
 
 type Props = {
 	roomId: string
@@ -80,6 +80,7 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 					>
 						<PlusIcon className="h-3.5 w-3.5" /> Insert
 					</button>
+					{insert.open && editor && exec && <span className="menu-arrow pop max-md:hidden" aria-hidden />}
 					{insert.open && editor && exec && (
 						<div
 							className={`${menuPanel} scroll-soft left-1/2 w-[392px] max-w-[calc(100vw-24px)] -translate-x-1/2 overflow-y-auto max-md:fixed max-md:inset-x-3 max-md:top-[calc(56px+env(safe-area-inset-top))] max-md:mt-0 max-md:max-h-[calc(100dvh-72px-env(safe-area-inset-top))] max-md:w-auto max-md:max-w-none max-md:translate-x-0`}
@@ -118,7 +119,11 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 										}}
 									>
 										<span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[var(--fill)] text-[var(--label)]" aria-hidden>
-											<KindIcon kind={c.key === 'card' ? 'rect' : c.key === 'navbar' || c.key === 'listItem' ? 'frame' : c.kind} className="h-4 w-4" />
+											{c.key === 'navbar' || c.key === 'listItem' || c.key === 'card' ? (
+												<RoleIcon role={c.key === 'navbar' ? 'header' : c.key === 'listItem' ? 'list' : 'card'} className="h-4 w-4" />
+											) : (
+												<KindIcon kind={c.kind} className="h-4 w-4" />
+											)}
 										</span>
 										{c.label}
 									</button>
@@ -137,14 +142,23 @@ export function TopBar({ roomId, me, participants, editor, exec, onOpenCode, onT
 						<Avatar key={p.userId} name={p.name} color={p.color} ring />
 					))}
 				</div>
+				{/* Theme of the selected screen: a design property, not the app's appearance (the shell follows the OS). */}
 				<button
-					className="tap flex h-11 w-11 items-center justify-center rounded-full text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] active:bg-[var(--press)] disabled:opacity-40 disabled:hover:bg-transparent md:h-8 md:w-8"
+					className="tap flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-full text-[13px] font-medium text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] active:bg-[var(--press)] disabled:opacity-40 disabled:hover:bg-transparent md:h-8 md:min-w-8 lg:px-2.5"
 					disabled={!target}
 					onClick={() => target && void exec?.run('set_theme', { screenId: target.id, mode: target.mode === 'dark' ? 'light' : 'dark' })}
-					title={target ? `Switch “${target.name}” to ${target.mode === 'dark' ? 'light' : 'dark'} mode` : 'Theme (select a screen)'}
-					aria-label="Toggle screen theme"
+					title={
+						target
+							? `Screen theme: ${target.mode === 'dark' ? 'Dark' : 'Light'}. Click to switch “${target.name}” to ${target.mode === 'dark' ? 'light' : 'dark'}. The app itself follows your system appearance.`
+							: 'Screen theme (select a screen)'
+					}
+					aria-label={target ? `Screen theme: ${target.mode === 'dark' ? 'Dark' : 'Light'}` : 'Screen theme'}
+					data-testid="screen-theme"
 				>
-					{target?.mode === 'dark' ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
+					<ScreenThemeIcon dark={target?.mode === 'dark'} className="h-[18px] w-[18px]" />
+					<span className="hidden lg:inline" aria-hidden>
+						{target?.mode === 'dark' ? 'Dark screen' : 'Light screen'}
+					</span>
 				</button>
 				<div ref={exportMenu.ref} className="relative">
 					<button

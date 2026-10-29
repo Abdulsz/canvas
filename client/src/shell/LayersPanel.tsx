@@ -2,12 +2,21 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { useValue, type Editor, type TLShape, type TLShapeId } from 'tldraw'
 import type { CanvasExecutor } from '../agent/executor.ts'
 import { CaretIcon, CloseIcon, LayersIcon } from '../components/icons.tsx'
-import { bareId, isContainer, isUi, uiChildren } from '../design/tree.ts'
+import { bareId, isContainer, isUi, uiChildren, uiMeta } from '../design/tree.ts'
 import { selectAndReveal } from './actions.ts'
-import { KindIcon } from './KindIcon.tsx'
+import { KIND_LABELS, KindIcon, layerRole, RoleIcon, ROLE_LABELS, type LayerRole } from './KindIcon.tsx'
 import { layerName } from './names.ts'
 
-type Layer = { id: TLShapeId; kind: string; name: string; children: Layer[]; isUi: boolean; helper: boolean }
+type Layer = { id: TLShapeId; kind: string; name: string; children: Layer[]; isUi: boolean; helper: boolean; role: LayerRole | null; tip: string }
+
+const LAYOUT_LABEL = { vertical: 'vertical auto layout', horizontal: 'horizontal auto layout', none: 'free layout' } as const
+
+/** Row tooltip: type (role for frames), layout direction and child count. */
+function layerTip(name: string, kind: string, role: LayerRole | null, layout: keyof typeof LAYOUT_LABEL | undefined, count: number) {
+	const type = role && role !== 'frame' && role !== 'stack' && role !== 'row' ? `${ROLE_LABELS[role]} frame` : (KIND_LABELS[kind] ?? kind)
+	const parts = [type, layout && kind !== 'screen' ? LAYOUT_LABEL[layout] : null, count ? `${count} ${count === 1 ? 'layer' : 'layers'}` : null].filter(Boolean)
+	return `${name} — ${parts.join(' · ')}`
+}
 type Row = { layer: Layer; depth: number; parent: TLShapeId | null; open: boolean }
 
 /** Structural helpers (icons, dividers, empty spacers) are real layers but visual noise: they render dimmed. */
@@ -21,7 +30,9 @@ function toLayer(editor: Editor, shape: TLShape, screenId: string | null = null)
 	const kind = isUi(shape) ? shape.props.kind : 'other'
 	const name = layerName(shape, sid)
 	const children = isContainer(shape) ? uiChildren(editor, shape).map((c) => toLayer(editor, c, sid)) : []
-	return { id: shape.id, kind, name, isUi: isUi(shape), children, helper: isHelper(kind, name, children.length) }
+	const layout = isUi(shape) ? uiMeta(shape).layout?.mode : undefined
+	const role = kind === 'frame' ? layerRole(name, layout) : null
+	return { id: shape.id, kind, name, isUi: isUi(shape), children, helper: isHelper(kind, name, children.length), role, tip: layerTip(name, kind, role, layout, children.length) }
 }
 
 /**
@@ -175,7 +186,8 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 								? 'shadow-[inset_0_0_0_1px_#0D99FF]'
 								: 'hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,#0D99FF_55%,transparent)]'
 				} ${isScreenRow && index > 0 ? 'mt-1' : ''}`}
-				style={{ paddingLeft: 4 + depth * 12 }}
+				style={{ paddingLeft: `calc(4px + ${depth} * var(--indent))` }}
+				title={layer.tip}
 				onPointerEnter={() => editor?.setHoveredShape(layer.id)}
 				onPointerLeave={() => editor?.setHoveredShape(null)}
 				onFocus={() => setFocusId(layer.id)}
@@ -189,10 +201,14 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				}}
 				onDoubleClick={() => layer.isUi && setRenaming(layer.id)}
 			>
+				{/* Indent guides: one hairline per ancestor level, through that ancestor's caret. */}
+				{Array.from({ length: depth }, (_, d) => (
+					<span key={d} className="indent-guide" style={{ left: `calc(4px + ${d} * var(--indent) + var(--caret) / 2)` }} aria-hidden />
+				))}
 				{/* Disclosure caret: pointer shortcut only (keyboard uses Right/Left on the row, which carries aria-expanded). */}
 				<span
 					aria-hidden
-					className={`flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] active:bg-[var(--press)] max-md:h-9 max-md:w-9 ${layer.children.length ? '' : 'invisible'}`}
+					className={`layer-caret tap flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-[5px] text-[var(--label-2)] transition-colors duration-150 hover:bg-[var(--fill)] hover:text-[var(--label)] active:bg-[var(--press)] pointer-coarse:h-8 pointer-coarse:w-8 ${layer.children.length ? '' : 'invisible'}`}
 					onClick={(e) => {
 						e.stopPropagation()
 						setOpen(layer.id, !row.open)
@@ -202,8 +218,9 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 				</span>
 				<span
 					className={`flex h-4 w-4 shrink-0 items-center justify-center ${isSel ? 'text-[var(--link)]' : isScreenRow ? 'text-[var(--label)]' : layer.helper ? 'text-[var(--label-3)] opacity-70' : 'text-[var(--label-2)]'}`}
+					data-role-icon={layer.role ?? layer.kind}
 				>
-					<KindIcon kind={layer.kind} />
+					{layer.role ? <RoleIcon role={layer.role} /> : <KindIcon kind={layer.kind} />}
 				</span>
 				{renaming === layer.id ? (
 					<input
@@ -232,7 +249,6 @@ export function LayersPanel({ editor, exec, onClose }: { editor: Editor | null; 
 						className={`min-w-0 flex-1 truncate ${isScreenRow ? 'font-semibold' : ''} ${
 							isSel || (ancestorsOfSelection.has(layer.id) && !isSel) ? 'text-[var(--label)]' : layer.helper ? 'text-[var(--label-3)]' : ''
 						}`}
-						title={layer.name}
 					>
 						{layer.name}
 					</span>
