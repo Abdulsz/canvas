@@ -1,0 +1,817 @@
+// The design document model shared by the client (renderer + executor) and the
+// server (schema). Everything here is pure: no editor, no DOM.
+//
+// Every design element is one tldraw shape of type 'ui'. Visual properties are
+// shape props (validated on both sides); layout lives in shape meta so it can
+// evolve without schema migrations. See docs/DESIGN_PLAN.md.
+
+import { T } from '@tldraw/validate'
+
+// ------------------------------------------------------------------ types
+
+export const UI_KINDS = [
+	'screen',
+	'frame',
+	'text',
+	'button',
+	'input',
+	'image',
+	'icon',
+	'avatar',
+	'toggle',
+	'checkbox',
+	'divider',
+	'rect',
+] as const
+export type UiKind = (typeof UI_KINDS)[number]
+
+export const CONTAINER_KINDS = new Set<UiKind>(['screen', 'frame'])
+export const isContainerKind = (kind: string) => CONTAINER_KINDS.has(kind as UiKind)
+
+export type SizeMode = 'fixed' | 'fill' | 'hug'
+export type Sizing = { w: SizeMode; h: SizeMode }
+export type LayoutMode = 'vertical' | 'horizontal' | 'none'
+export type AlignItems = 'start' | 'center' | 'end' | 'stretch'
+export type Justify = 'start' | 'center' | 'end' | 'space-between'
+export type LayoutSpec = {
+	mode: LayoutMode
+	gap: number
+	/** [top, right, bottom, left] */
+	padding: [number, number, number, number]
+	alignItems: AlignItems
+	justify: Justify
+}
+export type ThemeMode = 'light' | 'dark'
+export type ThemeSpec = { mode: ThemeMode; primary: string }
+
+export type UiAlign = 'left' | 'center' | 'right'
+export type UiShadow = 'none' | 'sm' | 'md' | 'lg'
+
+/** Props of the tldraw 'ui' shape. */
+export type UiProps = {
+	w: number
+	h: number
+	kind: UiKind
+	name: string
+	text: string
+	icon: string
+	fill: string
+	textColor: string
+	stroke: string
+	strokeWidth: number
+	radius: number
+	fontSize: number
+	fontWeight: number
+	align: UiAlign
+	shadow: UiShadow
+	opacity: number
+	checked: boolean
+}
+
+/** Layout-related shape meta of a 'ui' shape. */
+export type UiMeta = {
+	layout?: LayoutSpec
+	sizing: Sizing
+	order?: number
+	theme?: ThemeSpec
+}
+
+/** What the agent sends to describe a node (see shared/tools.ts). */
+export type UiNodeSpec = {
+	id: string
+	type?: UiKind
+	name?: string
+	text?: string
+	icon?: string
+	width?: number | 'fill' | 'hug'
+	height?: number | 'fill' | 'hug'
+	fill?: string
+	textColor?: string
+	stroke?: string
+	strokeWidth?: number
+	radius?: number
+	fontSize?: number
+	fontWeight?: number
+	align?: UiAlign
+	shadow?: UiShadow
+	opacity?: number
+	checked?: boolean
+	layout?: LayoutMode
+	gap?: number
+	padding?: number | number[]
+	alignItems?: AlignItems
+	justify?: Justify
+	x?: number
+	y?: number
+	children?: UiNodeSpec[]
+}
+
+// ------------------------------------------------------- schema (tldraw)
+
+export const uiShapeProps = {
+	w: T.number,
+	h: T.number,
+	kind: T.literalEnum(...UI_KINDS),
+	name: T.string,
+	text: T.string,
+	icon: T.string,
+	fill: T.string,
+	textColor: T.string,
+	stroke: T.string,
+	strokeWidth: T.number,
+	radius: T.number,
+	fontSize: T.number,
+	fontWeight: T.number,
+	align: T.literalEnum('left', 'center', 'right'),
+	shadow: T.literalEnum('none', 'sm', 'md', 'lg'),
+	opacity: T.number,
+	checked: T.boolean,
+}
+
+export const UI_DEFAULT_PROPS: UiProps = {
+	w: 100,
+	h: 100,
+	kind: 'rect',
+	name: '',
+	text: '',
+	icon: '',
+	fill: 'transparent',
+	textColor: '$text',
+	stroke: 'transparent',
+	strokeWidth: 1,
+	radius: 0,
+	fontSize: 16,
+	fontWeight: 400,
+	align: 'left',
+	shadow: 'none',
+	opacity: 1,
+	checked: false,
+}
+
+// ------------------------------------------------------ presets & tokens
+
+export type KindDefault = { props: Partial<UiProps>; sizing: Sizing; layout?: LayoutSpec }
+
+const pad = (n: number): [number, number, number, number] => [n, n, n, n]
+const vstack = (gap: number, padding: number): LayoutSpec => ({
+	mode: 'vertical',
+	gap,
+	padding: pad(padding),
+	alignItems: 'stretch',
+	justify: 'start',
+})
+
+export const KIND_DEFAULTS: Record<UiKind, KindDefault> = {
+	screen: { props: { w: 390, h: 844, fill: '$bg', radius: 0, shadow: 'md' }, sizing: { w: 'fixed', h: 'fixed' }, layout: vstack(16, 24) },
+	frame: { props: { w: 200, h: 100, fill: 'transparent' }, sizing: { w: 'fill', h: 'hug' }, layout: vstack(12, 0) },
+	text: { props: { w: 100, h: 22, textColor: '$text', fontSize: 16, fontWeight: 400 }, sizing: { w: 'hug', h: 'hug' } },
+	button: {
+		props: { w: 120, h: 48, fill: '$primary', textColor: '$onPrimary', radius: 10, fontSize: 16, fontWeight: 600, align: 'center' },
+		sizing: { w: 'hug', h: 'fixed' },
+		layout: { mode: 'horizontal', gap: 8, padding: [0, 24, 0, 24], alignItems: 'center', justify: 'center' },
+	},
+	input: {
+		props: { w: 280, h: 48, fill: '$surface', stroke: '$border', strokeWidth: 1, textColor: '$muted', radius: 10, fontSize: 16 },
+		sizing: { w: 'fill', h: 'fixed' },
+		layout: { mode: 'horizontal', gap: 10, padding: [0, 16, 0, 16], alignItems: 'center', justify: 'start' },
+	},
+	image: { props: { w: 300, h: 160, fill: '$surfaceAlt', textColor: '$muted', radius: 12 }, sizing: { w: 'fill', h: 'fixed' } },
+	icon: { props: { w: 24, h: 24, textColor: '$text', icon: 'star' }, sizing: { w: 'fixed', h: 'fixed' } },
+	avatar: { props: { w: 40, h: 40, fill: '$primary', textColor: '$onPrimary', fontSize: 15, fontWeight: 600 }, sizing: { w: 'fixed', h: 'fixed' } },
+	toggle: { props: { w: 44, h: 24, fill: '$primary', checked: true }, sizing: { w: 'fixed', h: 'fixed' } },
+	checkbox: { props: { w: 120, h: 22, fill: '$primary', textColor: '$text', fontSize: 15 }, sizing: { w: 'hug', h: 'hug' } },
+	divider: { props: { w: 100, h: 1, fill: '$border' }, sizing: { w: 'fill', h: 'fixed' } },
+	rect: { props: { w: 100, h: 100, fill: '$surfaceAlt', radius: 8 }, sizing: { w: 'fixed', h: 'fixed' } },
+}
+
+export const DEVICES = {
+	iphone: { w: 390, h: 844 },
+	android: { w: 412, h: 915 },
+	tablet: { w: 834, h: 1194 },
+	desktop: { w: 1440, h: 1024 },
+	watch: { w: 198, h: 242 },
+} as const
+export type Device = keyof typeof DEVICES
+
+export const DEFAULT_PRIMARY = '#5b5bd6'
+export const DEFAULT_THEME: ThemeSpec = { mode: 'light', primary: DEFAULT_PRIMARY }
+
+export const TOKENS = ['bg', 'surface', 'surfaceAlt', 'primary', 'onPrimary', 'text', 'muted', 'border'] as const
+export type Token = (typeof TOKENS)[number]
+
+export const THEMES: Record<ThemeMode, Record<Token, string>> = {
+	light: {
+		bg: '#ffffff',
+		surface: '#ffffff',
+		surfaceAlt: '#f1f2f4',
+		primary: DEFAULT_PRIMARY,
+		onPrimary: '#ffffff',
+		text: '#111827',
+		muted: '#6b7280',
+		border: '#e2e4e9',
+	},
+	dark: {
+		bg: '#0f1115',
+		surface: '#181b21',
+		surfaceAlt: '#22262e',
+		primary: DEFAULT_PRIMARY,
+		onPrimary: '#ffffff',
+		text: '#f3f4f6',
+		muted: '#9ca3af',
+		border: '#2f343d',
+	},
+}
+
+/** Resolves a color value (`#hex`, `transparent`, CSS color, or `$token`) against a theme. */
+export function resolveColor(value: string | undefined, theme: Partial<ThemeSpec> = DEFAULT_THEME): string {
+	const v = (value ?? '').trim()
+	if (!v || v === 'none') return 'transparent'
+	const key = v.startsWith('$') ? v.slice(1) : v
+	if ((TOKENS as readonly string[]).includes(key)) {
+		if (key === 'primary' && theme.primary) return theme.primary
+		return THEMES[theme.mode === 'dark' ? 'dark' : 'light'][key as Token]
+	}
+	return v
+}
+
+// Simple 24x24 stroke icons (feather-style paths), rendered by the client and the HTML export.
+export const ICON_PATHS: Record<string, string> = {
+	search: 'M18 11a7 7 0 1 1-14 0a7 7 0 1 1 14 0z M21 21l-4.35-4.35',
+	user: 'M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2 M16 7a4 4 0 1 1-8 0a4 4 0 1 1 8 0z',
+	home: 'M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10',
+	settings:
+		'M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z',
+	bell: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9 M13.73 21a2 2 0 0 1-3.46 0',
+	heart: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z',
+	star: 'M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z',
+	plus: 'M12 5v14 M5 12h14',
+	minus: 'M5 12h14',
+	menu: 'M3 6h18 M3 12h18 M3 18h18',
+	'arrow-left': 'M19 12H5 M12 19l-7-7 7-7',
+	'arrow-right': 'M5 12h14 M12 5l7 7-7 7',
+	'chevron-left': 'M15 18l-6-6 6-6',
+	'chevron-right': 'M9 18l6-6-6-6',
+	'chevron-down': 'M6 9l6 6 6-6',
+	check: 'M20 6L9 17l-5-5',
+	x: 'M18 6L6 18 M6 6l12 12',
+	mail: 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M22 6l-10 7L2 6',
+	lock: 'M5 11h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z M7 11V7a5 5 0 0 1 10 0v4',
+	eye: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z M15 12a3 3 0 1 1-6 0a3 3 0 1 1 6 0z',
+	cart: 'M10 21a1 1 0 1 1-2 0a1 1 0 1 1 2 0z M21 21a1 1 0 1 1-2 0a1 1 0 1 1 2 0z M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6',
+	chat: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+	calendar: 'M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z M16 2v4 M8 2v4 M3 10h18',
+	image: 'M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z M10 8.5a1.5 1.5 0 1 1-3 0a1.5 1.5 0 1 1 3 0z M21 15l-5-5L5 21',
+	more: 'M13 12a1 1 0 1 1-2 0a1 1 0 1 1 2 0z M20 12a1 1 0 1 1-2 0a1 1 0 1 1 2 0z M6 12a1 1 0 1 1-2 0a1 1 0 1 1 2 0z',
+	trash: 'M3 6h18 M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6 M10 11v6 M14 11v6 M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2',
+	edit: 'M12 20h9 M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z',
+	share: 'M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8 M16 6l-4-4-4 4 M12 2v13',
+	filter: 'M22 3H2l8 9.46V19l4 2v-8.54L22 3z',
+	play: 'M5 3l14 9-14 9V3z',
+	camera: 'M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z M16 13a4 4 0 1 1-8 0a4 4 0 1 1 8 0z',
+	phone: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z',
+	globe: 'M22 12a10 10 0 1 1-20 0a10 10 0 1 1 20 0z M2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+	logout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9',
+	chart: 'M18 20V10 M12 20V4 M6 20v-6',
+	bookmark: 'M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z',
+}
+export const ICONS = Object.keys(ICON_PATHS)
+
+// ------------------------------------------------------------ measurement
+
+export const LINE_HEIGHT = 1.4
+const CHAR_WIDTH = 0.55
+
+export type TextMeasurer = (text: string, fontSize: number, maxWidth?: number, fontWeight?: number) => { w: number; h: number }
+
+/** Rough text size estimate (no DOM): 0.55em per char, 1.4 line height, word wrapping at maxWidth. */
+export function estimateText(text: string, fontSize: number, maxWidth?: number, fontWeight = 400): { w: number; h: number; lines: number } {
+	const cw = fontSize * CHAR_WIDTH * (fontWeight >= 600 ? 1.04 : 1)
+	const lh = fontSize * LINE_HEIGHT
+	const paragraphs = String(text ?? '').split('\n')
+	let lines = 0
+	let widest = 0
+	for (const para of paragraphs) {
+		const naturalW = para.length * cw
+		if (!maxWidth || naturalW <= maxWidth) {
+			lines++
+			widest = Math.max(widest, naturalW)
+			continue
+		}
+		let line = 0
+		for (const word of para.split(/\s+/).filter(Boolean)) {
+			const ww = word.length * cw
+			const next = line ? line + cw + ww : ww
+			if (line && next > maxWidth) {
+				lines++
+				widest = Math.max(widest, line)
+				line = ww
+			} else line = next
+		}
+		lines++
+		widest = Math.max(widest, Math.min(line, maxWidth))
+	}
+	return { w: Math.ceil(Math.min(widest, maxWidth ?? Infinity)), h: Math.ceil(Math.max(1, lines) * lh), lines: Math.max(1, lines) }
+}
+
+let activeMeasurer: TextMeasurer = estimateText
+
+/** Text size used by the layout engine: the estimate, or the measurer passed to layoutTree. */
+export function measureText(text: string, fontSize: number, maxWidth?: number, fontWeight = 400): { w: number; h: number } {
+	return activeMeasurer(text, fontSize, maxWidth, fontWeight)
+}
+
+/**
+ * Word-wrapping on top of a single-line width function (e.g. canvas
+ * measureText in the browser). Lines are 1.4 x fontSize tall.
+ */
+export function wrapWith(lineWidth: (s: string) => number, text: string, fontSize: number, maxWidth?: number) {
+	let lines = 0
+	let widest = 0
+	for (const para of String(text ?? '').split('\n')) {
+		const full = lineWidth(para)
+		if (!maxWidth || full <= maxWidth) {
+			lines++
+			widest = Math.max(widest, full)
+			continue
+		}
+		let line = ''
+		for (const word of para.split(/\s+/).filter(Boolean)) {
+			const next = line ? `${line} ${word}` : word
+			if (line && lineWidth(next) > maxWidth) {
+				lines++
+				widest = Math.max(widest, lineWidth(line))
+				line = word
+			} else line = next
+		}
+		lines++
+		widest = Math.max(widest, lineWidth(line))
+	}
+	return { w: Math.ceil(Math.min(widest, maxWidth ?? Infinity)), h: Math.ceil(Math.max(1, lines) * fontSize * LINE_HEIGHT) }
+}
+
+// ------------------------------------------------------------- auto layout
+
+export type LayoutNode = {
+	id: string
+	kind: UiKind | string
+	w: number
+	h: number
+	x?: number
+	y?: number
+	text?: string
+	icon?: string
+	fontSize?: number
+	fontWeight?: number
+	sizing?: Partial<Sizing>
+	layout?: Partial<LayoutSpec>
+	children?: LayoutNode[]
+}
+export type LayoutBox = { x: number; y: number; w: number; h: number }
+
+const fullLayout = (node: LayoutNode): LayoutSpec | null => {
+	const l = node.layout
+	if (!l) return null
+	return {
+		mode: l.mode ?? 'vertical',
+		gap: l.gap ?? 0,
+		padding: normalizePadding(l.padding),
+		alignItems: l.alignItems ?? 'start',
+		justify: l.justify ?? 'start',
+	}
+}
+const sizingOf = (node: LayoutNode, axis: 'w' | 'h'): SizeMode => node.sizing?.[axis] ?? 'fixed'
+const kids = (node: LayoutNode) => node.children ?? []
+
+/** Content size of a leaf when hugging. */
+function leafHugW(node: LayoutNode): number {
+	const fs = node.fontSize ?? 16
+	const text = node.text ?? ''
+	const l = fullLayout(node)
+	const padX = l ? l.padding[1] + l.padding[3] : 0
+	switch (node.kind) {
+		case 'text':
+			return measureText(text, fs, undefined, node.fontWeight).w
+		case 'button': {
+			const t = text ? measureText(text, fs, undefined, node.fontWeight).w : 0
+			const icon = node.icon ? Math.round(fs * 1.25) : 0
+			return Math.ceil(t + icon + (t && icon ? (l?.gap ?? 8) : 0) + padX)
+		}
+		case 'checkbox':
+			return text ? Math.ceil(20 + 10 + measureText(text, fs).w) : 20
+		case 'input': {
+			const t = measureText(text || 'Placeholder', fs).w
+			return Math.ceil(t + padX + (node.icon ? 30 : 0))
+		}
+		default:
+			return node.w
+	}
+}
+function leafHugH(node: LayoutNode, w: number): number {
+	const fs = node.fontSize ?? 16
+	switch (node.kind) {
+		case 'text':
+			return measureText(node.text ?? '', fs, w, node.fontWeight).h
+		case 'checkbox':
+			return Math.max(20, Math.ceil(fs * LINE_HEIGHT))
+		case 'button':
+		case 'input':
+			return Math.max(Math.ceil(fs * LINE_HEIGHT) + 24, 40)
+		default:
+			return node.h
+	}
+}
+
+/** Natural (hug) width of a node; fill counts as its natural width here. */
+function naturalW(node: LayoutNode): number {
+	if (sizingOf(node, 'w') === 'fixed') return node.w
+	const l = fullLayout(node)
+	const cs = kids(node)
+	if (!isContainerKind(node.kind) || !l) return sizingOf(node, 'w') === 'fill' && !['text', 'button', 'checkbox'].includes(node.kind) ? node.w : leafHugW(node)
+	if (sizingOf(node, 'w') === 'fill' && !cs.length) return node.w
+	const px = l.padding[1] + l.padding[3]
+	if (l.mode === 'none') return Math.max(0, ...cs.map((c) => (c.x ?? 0) + naturalW(c))) + px
+	const ws = cs.map(naturalW)
+	if (l.mode === 'horizontal') return ws.reduce((a, b) => a + b, 0) + l.gap * Math.max(0, cs.length - 1) + px
+	return Math.max(0, ...ws) + px
+}
+
+/** Natural (hug) height of a node at a given width. */
+function naturalH(node: LayoutNode, w: number): number {
+	if (sizingOf(node, 'h') === 'fixed') return node.h
+	const l = fullLayout(node)
+	const cs = kids(node)
+	if (!isContainerKind(node.kind) || !l) return sizingOf(node, 'h') === 'fill' && node.kind !== 'text' ? node.h : leafHugH(node, w)
+	if (sizingOf(node, 'h') === 'fill' && !cs.length) return node.h
+	const py = l.padding[0] + l.padding[2]
+	const widths = childWidths(node, l, w)
+	if (l.mode === 'none') return Math.max(0, ...cs.map((c, i) => (c.y ?? 0) + naturalH(c, widths[i]))) + py
+	const hs = cs.map((c, i) => naturalH(c, widths[i]))
+	if (l.mode === 'vertical') return hs.reduce((a, b) => a + b, 0) + l.gap * Math.max(0, cs.length - 1) + py
+	return Math.max(0, ...hs) + py
+}
+
+/** Splits `free` space equally among `count` fill children. */
+const share = (free: number, count: number) => (count ? Math.max(0, free) / count : 0)
+
+function childWidths(node: LayoutNode, l: LayoutSpec, w: number): number[] {
+	const cs = kids(node)
+	const inner = Math.max(0, w - l.padding[1] - l.padding[3])
+	if (l.mode === 'vertical' || l.mode === 'none') {
+		return cs.map((c) => {
+			const s = sizingOf(c, 'w')
+			if (s === 'fill' || (l.mode === 'vertical' && l.alignItems === 'stretch' && s === 'hug')) return inner
+			if (s === 'hug') return Math.min(naturalW(c), inner || naturalW(c))
+			return c.w
+		})
+	}
+	// horizontal: fixed/hug take their size, fill shares the rest
+	const sizes = cs.map((c) => (sizingOf(c, 'w') === 'fill' ? 0 : naturalW(c)))
+	const fills = cs.filter((c) => sizingOf(c, 'w') === 'fill').length
+	const used = sizes.reduce((a, b) => a + b, 0) + l.gap * Math.max(0, cs.length - 1)
+	const each = share(inner - used, fills)
+	return cs.map((c, i) => (sizingOf(c, 'w') === 'fill' ? each : sizes[i]))
+}
+
+function childHeights(node: LayoutNode, l: LayoutSpec, h: number, widths: number[]): number[] {
+	const cs = kids(node)
+	const inner = Math.max(0, h - l.padding[0] - l.padding[2])
+	if (l.mode === 'horizontal' || l.mode === 'none') {
+		return cs.map((c, i) => {
+			const s = sizingOf(c, 'h')
+			if (s === 'fill' || (l.mode === 'horizontal' && l.alignItems === 'stretch' && s === 'hug')) return inner
+			if (s === 'hug') return naturalH(c, widths[i])
+			return c.h
+		})
+	}
+	const sizes = cs.map((c, i) => (sizingOf(c, 'h') === 'fill' ? 0 : naturalH(c, widths[i])))
+	const fills = cs.filter((c) => sizingOf(c, 'h') === 'fill').length
+	const used = sizes.reduce((a, b) => a + b, 0) + l.gap * Math.max(0, cs.length - 1)
+	const each = share(inner - used, fills)
+	return cs.map((c, i) => (sizingOf(c, 'h') === 'fill' ? each : sizes[i]))
+}
+
+function place(node: LayoutNode, w: number, h: number, out: Map<string, LayoutBox>) {
+	const l = fullLayout(node)
+	const cs = kids(node)
+	if (!cs.length || !l) {
+		for (const c of cs) out.set(c.id, { x: c.x ?? 0, y: c.y ?? 0, w: c.w, h: c.h })
+		return
+	}
+	const ws = childWidths(node, l, w)
+	const hs = childHeights(node, l, h, ws)
+	const [pt, pr, pb, pl] = l.padding
+	if (l.mode === 'none') {
+		cs.forEach((c, i) => {
+			out.set(c.id, { x: c.x ?? 0, y: c.y ?? 0, w: ws[i], h: hs[i] })
+			place(c, ws[i], hs[i], out)
+		})
+		return
+	}
+	const vertical = l.mode === 'vertical'
+	const mains = vertical ? hs : ws
+	const crosses = vertical ? ws : hs
+	const innerMain = vertical ? h - pt - pb : w - pl - pr
+	const innerCross = vertical ? w - pl - pr : h - pt - pb
+	const total = mains.reduce((a, b) => a + b, 0) + l.gap * Math.max(0, cs.length - 1)
+	const free = innerMain - total
+	let gap = l.gap
+	let offset = 0
+	if (l.justify === 'center') offset = free / 2
+	else if (l.justify === 'end') offset = free
+	else if (l.justify === 'space-between' && cs.length > 1 && free > 0) gap = l.gap + free / (cs.length - 1)
+	else if (l.justify === 'space-between' && cs.length === 1) offset = 0
+	let cursor = (vertical ? pt : pl) + offset
+	cs.forEach((c, i) => {
+		const slack = innerCross - crosses[i]
+		const crossOff = l.alignItems === 'center' ? slack / 2 : l.alignItems === 'end' ? slack : 0
+		const crossPos = (vertical ? pl : pt) + crossOff
+		const box = vertical
+			? { x: crossPos, y: cursor, w: ws[i], h: hs[i] }
+			: { x: cursor, y: crossPos, w: ws[i], h: hs[i] }
+		out.set(c.id, roundBox(box))
+		cursor += mains[i] + gap
+		place(c, ws[i], hs[i], out)
+	})
+}
+
+const r2 = (n: number) => Math.round(n * 100) / 100
+const roundBox = (b: LayoutBox): LayoutBox => ({ x: r2(b.x), y: r2(b.y), w: r2(Math.max(0, b.w)), h: r2(Math.max(0, b.h)) })
+
+/**
+ * Figma-style auto layout. Returns the box of every node in the tree, x/y
+ * relative to its parent (the root keeps its own x/y). Root 'fill' sizing has
+ * no parent to fill, so it is treated as fixed.
+ */
+export function layoutTree(root: LayoutNode, opts: { measure?: TextMeasurer } = {}): Map<string, LayoutBox> {
+	const previous = activeMeasurer
+	activeMeasurer = opts.measure ?? estimateText
+	try {
+		const out = new Map<string, LayoutBox>()
+		const w = sizingOf(root, 'w') === 'hug' ? naturalW(root) : root.w
+		const h = sizingOf(root, 'h') === 'hug' ? naturalH(root, w) : root.h
+		out.set(root.id, roundBox({ x: root.x ?? 0, y: root.y ?? 0, w, h }))
+		place(root, w, h, out)
+		return out
+	} finally {
+		activeMeasurer = previous
+	}
+}
+
+// --------------------------------------------------------- normalization
+
+/** A fully-resolved design node: shape props + layout meta + children. */
+export type UiTreeNode = {
+	id: string
+	props: UiProps
+	meta: UiMeta
+	x: number
+	y: number
+	children: UiTreeNode[]
+}
+
+export function normalizePadding(p: unknown): [number, number, number, number] {
+	const n = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(0, v) : 0)
+	if (typeof p === 'number') return pad(n(p))
+	if (Array.isArray(p)) {
+		if (p.length === 1) return pad(n(p[0]))
+		if (p.length === 2) return [n(p[0]), n(p[1]), n(p[0]), n(p[1])]
+		if (p.length === 3) return [n(p[0]), n(p[1]), n(p[2]), n(p[1])]
+		if (p.length >= 4) return [n(p[0]), n(p[1]), n(p[2]), n(p[3])]
+	}
+	return [0, 0, 0, 0]
+}
+
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined)
+const oneOf = <V extends string>(v: unknown, allowed: readonly V[]): V | undefined => (allowed.includes(v as V) ? (v as V) : undefined)
+
+export const normalizeKind = (t: unknown): UiKind => {
+	const s = String(t ?? '').toLowerCase()
+	const alias: Record<string, UiKind> = { container: 'frame', stack: 'frame', row: 'frame', column: 'frame', label: 'text', heading: 'text', textfield: 'input', 'text-field': 'input', switch: 'toggle', img: 'image', separator: 'divider', box: 'rect', rectangle: 'rect' }
+	return (UI_KINDS as readonly string[]).includes(s) ? (s as UiKind) : (alias[s] ?? 'frame')
+}
+
+/**
+ * Applies the spec's fields (all optional) on top of existing props/meta.
+ * Used both for creation (on top of kind defaults) and for update_node.
+ */
+export function applySpec(props: UiProps, meta: UiMeta, spec: Partial<UiNodeSpec>): { props: UiProps; meta: UiMeta } {
+	const p: UiProps = { ...props }
+	const m: UiMeta = { ...meta, sizing: { ...meta.sizing } }
+	for (const k of ['name', 'text', 'icon', 'fill', 'textColor', 'stroke'] as const) {
+		if (spec[k] !== undefined && spec[k] !== null) p[k] = String(spec[k])
+	}
+	for (const k of ['strokeWidth', 'radius', 'fontSize', 'fontWeight', 'opacity'] as const) {
+		const v = num(spec[k])
+		if (v !== undefined) p[k] = k === 'opacity' ? Math.min(1, Math.max(0, v)) : Math.max(0, v)
+	}
+	if (oneOf(spec.align, ['left', 'center', 'right'] as const)) p.align = spec.align!
+	if (oneOf(spec.shadow, ['none', 'sm', 'md', 'lg'] as const)) p.shadow = spec.shadow!
+	if (typeof spec.checked === 'boolean') p.checked = spec.checked
+	if (p.icon && !ICON_PATHS[p.icon]) p.icon = ICONS.find((i) => p.icon.includes(i)) ?? 'star'
+	for (const [key, axis] of [['width', 'w'], ['height', 'h']] as const) {
+		const v = spec[key]
+		if (v === 'fill' || v === 'hug') m.sizing[axis] = v
+		else if (num(v) !== undefined) {
+			m.sizing[axis] = 'fixed'
+			p[axis] = Math.max(0, num(v)!)
+		}
+	}
+	const layoutKeys = ['layout', 'gap', 'padding', 'alignItems', 'justify'] as const
+	if (layoutKeys.some((k) => spec[k] !== undefined) && (isContainerKind(p.kind) || m.layout)) {
+		const base: LayoutSpec = m.layout ?? vstack(12, 0)
+		const l: LayoutSpec = { ...base, padding: [...base.padding] as LayoutSpec['padding'] }
+		const mode = oneOf(spec.layout, ['vertical', 'horizontal', 'none'] as const)
+		if (mode) {
+			// Horizontal rows read best vertically centered unless told otherwise.
+			if (mode !== l.mode && spec.alignItems === undefined) l.alignItems = mode === 'horizontal' ? 'center' : 'stretch'
+			l.mode = mode
+		}
+		if (num(spec.gap) !== undefined) l.gap = Math.max(0, num(spec.gap)!)
+		if (spec.padding !== undefined) l.padding = normalizePadding(spec.padding)
+		const ai = oneOf(spec.alignItems, ['start', 'center', 'end', 'stretch'] as const)
+		if (ai) l.alignItems = ai
+		const j = oneOf(spec.justify, ['start', 'center', 'end', 'space-between'] as const)
+		if (j) l.justify = j
+		m.layout = l
+	}
+	return { props: p, meta: m }
+}
+
+/** Default props + meta for a kind. */
+export function kindDefaults(kind: UiKind): { props: UiProps; meta: UiMeta } {
+	const d = KIND_DEFAULTS[kind]
+	return {
+		props: { ...UI_DEFAULT_PROPS, ...d.props, kind },
+		meta: { sizing: { ...d.sizing }, ...(d.layout ? { layout: { ...d.layout, padding: [...d.layout.padding] as LayoutSpec['padding'] } } : {}) },
+	}
+}
+
+/**
+ * Turns an agent node spec (recursively) into a resolved tree: kind defaults
+ * applied, padding normalized, children ordered. `kind` overrides spec.type
+ * (e.g. 'screen' for create_screen).
+ */
+export function specToTree(spec: UiNodeSpec, kind?: UiKind): UiTreeNode {
+	const k = kind ?? normalizeKind(spec.type)
+	const base = kindDefaults(k)
+	const { props, meta } = applySpec(base.props, base.meta, spec)
+	if (!props.name) props.name = String(spec.id ?? '')
+	const children = (isContainerKind(k) && Array.isArray(spec.children) ? spec.children : [])
+		.filter((c) => c && typeof c === 'object')
+		.map((c, i) => {
+			const child = specToTree(c.type === 'screen' ? { ...c, type: 'frame' } : c)
+			child.meta.order = i
+			return child
+		})
+	return { id: String(spec.id ?? ''), props, meta, x: num(spec.x) ?? 0, y: num(spec.y) ?? 0, children }
+}
+
+/** Converts a resolved tree into the plain tree layoutTree works on. */
+export function toLayoutNode(node: UiTreeNode): LayoutNode {
+	return {
+		id: node.id,
+		kind: node.props.kind,
+		w: node.props.w,
+		h: node.props.h,
+		x: node.x,
+		y: node.y,
+		text: node.props.text,
+		icon: node.props.icon,
+		fontSize: node.props.fontSize,
+		fontWeight: node.props.fontWeight,
+		sizing: node.meta.sizing,
+		layout: node.meta.layout,
+		children: [...node.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map(toLayoutNode),
+	}
+}
+
+/** Lays out a resolved tree in place (writes x/y/w/h) and returns it. */
+export function layoutUiTree(root: UiTreeNode, opts: { measure?: TextMeasurer } = {}): UiTreeNode {
+	const boxes = layoutTree(toLayoutNode(root), opts)
+	const walk = (n: UiTreeNode) => {
+		const b = boxes.get(n.id)
+		if (b) Object.assign(n, { x: b.x, y: b.y }), Object.assign(n.props, { w: b.w, h: b.h })
+		n.children.forEach(walk)
+	}
+	walk(root)
+	return root
+}
+
+/** Initials for an avatar label. */
+export const initials = (s: string) =>
+	s
+		.split(/\s+/)
+		.filter(Boolean)
+		.slice(0, 2)
+		.map((w) => w[0]!.toUpperCase())
+		.join('')
+
+export const SHADOWS: Record<UiShadow, string> = {
+	none: 'none',
+	sm: '0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10)',
+	md: '0 4px 8px -2px rgba(16,24,40,.10), 0 2px 4px -2px rgba(16,24,40,.06)',
+	lg: '0 20px 24px -4px rgba(16,24,40,.10), 0 8px 8px -4px rgba(16,24,40,.04)',
+}
+
+// ------------------------------------------------------------- HTML export
+
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
+const cssColor = (v: string) => (v.startsWith('$') ? `var(--${v.slice(1)})` : v || 'transparent')
+const FLEX_ALIGN: Record<string, string> = { start: 'flex-start', center: 'center', end: 'flex-end', stretch: 'stretch', 'space-between': 'space-between' }
+
+export function iconSvg(name: string, size: number, color: string): string {
+	const d = ICON_PATHS[name] ?? ICON_PATHS.star
+	return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`
+}
+
+/**
+ * Standalone HTML/CSS for a resolved tree (usually a screen). Auto layout maps
+ * to flexbox, sizing to flex/width rules, tokens to CSS variables.
+ */
+export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.meta.theme ?? DEFAULT_THEME): string {
+	const vars = TOKENS.map((t) => `--${t}: ${resolveColor('$' + t, theme)};`).join(' ')
+	const node = (n: UiTreeNode, parent: LayoutSpec | null): string => {
+		const p = n.props
+		const s: string[] = []
+		const sz = n.meta.sizing
+		const dirMain = parent?.mode === 'horizontal' ? 'w' : 'h'
+		for (const axis of ['w', 'h'] as const) {
+			const prop = axis === 'w' ? 'width' : 'height'
+			const mode = parent ? sz[axis] : 'fixed'
+			if (mode === 'fixed') s.push(`${prop}: ${Math.round(p[axis])}px`, `flex-shrink: 0`)
+			else if (mode === 'fill' && parent && parent.mode !== 'none') {
+				if (axis === dirMain) s.push('flex: 1 1 0')
+				else s.push('align-self: stretch')
+			}
+		}
+		if (parent?.mode === 'none') s.push('position: absolute', `left: ${Math.round(n.x)}px`, `top: ${Math.round(n.y)}px`)
+		const l = n.meta.layout
+		if (l) {
+			if (l.mode === 'none') s.push('position: relative')
+			else s.push('display: flex', `flex-direction: ${l.mode === 'horizontal' ? 'row' : 'column'}`, `gap: ${l.gap}px`, `align-items: ${FLEX_ALIGN[l.alignItems]}`, `justify-content: ${FLEX_ALIGN[l.justify]}`)
+			s.push(`padding: ${l.padding.map((v) => `${v}px`).join(' ')}`)
+		}
+		if (p.fill !== 'transparent' && p.kind !== 'toggle' && p.kind !== 'checkbox' && p.kind !== 'icon') s.push(`background: ${cssColor(p.fill)}`)
+		if (p.stroke !== 'transparent') s.push(`border: ${p.strokeWidth}px solid ${cssColor(p.stroke)}`)
+		if (p.radius) s.push(`border-radius: ${p.radius}px`)
+		if (p.kind === 'avatar') s.push('border-radius: 50%', 'display: flex', 'align-items: center', 'justify-content: center')
+		if (p.shadow !== 'none') s.push(`box-shadow: ${SHADOWS[p.shadow]}`)
+		if (p.opacity !== 1) s.push(`opacity: ${p.opacity}`)
+		if (['text', 'button', 'input', 'checkbox', 'avatar'].includes(p.kind)) {
+			s.push(`color: ${cssColor(p.textColor)}`, `font-size: ${p.fontSize}px`, `font-weight: ${p.fontWeight}`, `line-height: ${LINE_HEIGHT}`)
+			if (p.kind === 'text') s.push(`text-align: ${p.align}`, 'margin: 0')
+		}
+		if (p.kind === 'screen') s.push('overflow: hidden', 'box-sizing: border-box')
+		const style = `style="${s.join('; ')}"`
+		const label = esc(p.text)
+		const icon = (size: number, color: string) => (p.icon ? iconSvg(p.icon, size, color) : '')
+		const childParent = l ?? null
+		switch (p.kind) {
+			case 'text':
+				return `<p ${style}>${label}</p>`
+			case 'button':
+				return `<button ${style}>${icon(Math.round(p.fontSize * 1.25), 'currentColor')}${label}</button>`
+			case 'input':
+				return `<label ${style}>${icon(20, 'var(--muted)')}<input placeholder="${label}" style="all: unset; flex: 1; color: var(--text)" /></label>`
+			case 'image':
+				return `<div ${style} role="img" aria-label="${label || 'image'}"></div>`
+			case 'icon':
+				return `<span ${style}>${iconSvg(p.icon, Math.min(p.w, p.h), cssColor(p.textColor))}</span>`
+			case 'avatar':
+				return `<div ${style}>${p.icon ? icon(Math.round(p.w * 0.5), 'currentColor') : esc(initials(p.text || p.name))}</div>`
+			case 'toggle':
+				return `<input type="checkbox" role="switch" ${p.checked ? 'checked ' : ''}${style} />`
+			case 'checkbox':
+				return `<label ${style}><input type="checkbox" ${p.checked ? 'checked ' : ''}style="accent-color: ${cssColor(p.fill)}; width: 18px; height: 18px; margin: 0 10px 0 0" />${label}</label>`
+			case 'divider':
+				return `<hr ${style.replace('style="', 'style="border: 0; margin: 0; ')} />`
+			default: {
+				const inner = [...n.children].sort((a, b) => (a.meta.order ?? 0) - (b.meta.order ?? 0)).map((c) => node(c, childParent)).join('\n')
+				return `<div data-name="${esc(p.name)}" ${style}>\n${inner}\n</div>`
+			}
+		}
+	}
+	return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>${esc(tree.props.name || tree.id)}</title>
+<style>
+:root { ${vars} }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #e9eaee; font-family: Inter, system-ui, -apple-system, sans-serif; }
+button { border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; }
+label { display: flex; align-items: center; gap: 10px; }
+input[role="switch"] { appearance: none; position: relative; border-radius: 999px; background: var(--border); margin: 0; }
+input[role="switch"]:checked { background: var(--primary); }
+input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(100% / 2 - 4px); aspect-ratio: 1; height: calc(100% - 4px); border-radius: 50%; background: #fff; transition: left .15s; }
+input[role="switch"]:checked::after { left: calc(100% - (100% / 2 - 4px) - 2px); }
+</style>
+</head>
+<body>
+${node(tree, null)}
+</body>
+</html>
+`
+}

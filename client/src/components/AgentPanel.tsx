@@ -30,7 +30,7 @@ type Props = {
 const MODES: { id: ReviewMode; label: string; hint: string }[] = [
 	{ id: 'on_request', label: 'On Request', hint: 'Grok reviews when you ask or tap Check my work.' },
 	{ id: 'proactive', label: 'Proactive', hint: 'Grok takes a look whenever you pause drawing.' },
-	{ id: 'exercise', label: 'Exercise', hint: 'Grok sets a task, then grades your drawing.' },
+	{ id: 'guided', label: 'Exercise', hint: 'Grok sets a task, then grades your drawing.' },
 ]
 
 const SUGGESTED_PROMPTS = ['Explain a web architecture', 'Show two pointers on an array', 'Give me an exercise']

@@ -1,6 +1,9 @@
 // Tool (function) definitions given to Grok. Kept in one place so the server
 // (which sends them to the model) and the client (which executes them on the
-// tldraw editor) agree on names and argument shapes.
+// tldraw editor) agree on names and argument shapes. The design model behind
+// them lives in shared/design.ts.
+
+import { DEVICES, ICONS } from './design.ts'
 
 export type ToolDef = {
 	name: string
@@ -8,107 +11,203 @@ export type ToolDef = {
 	parameters: Record<string, unknown>
 }
 
-const color = { type: 'string', enum: ['black', 'blue', 'green', 'red', 'orange', 'grey'] }
 const region = {
 	type: 'object',
 	description: 'Page-space bounding box',
 	properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } },
 }
 
-const createShapeParams = {
-	type: 'object',
-	properties: {
-		id: { type: 'string', description: "Unique semantic shape ID (e.g., 'db_main', 'node_root')" },
-		type: { type: 'string', enum: ['geo', 'text', 'note'] },
-		geo: {
-			type: 'string',
-			enum: ['rectangle', 'ellipse', 'diamond'],
-			description: 'Shape geometry if type is geo',
-		},
-		x: { type: 'number', description: 'Canvas X position' },
-		y: { type: 'number', description: 'Canvas Y position' },
-		w: { type: 'number', description: 'Width' },
-		h: { type: 'number', description: 'Height' },
-		label: { type: 'string', description: 'Text content inside or on the shape' },
-		color,
+const colorValue = (what: string) => ({
+	type: 'string',
+	description: `${what}. Prefer theme tokens so light/dark mode works: $bg $surface $surfaceAlt $primary $onPrimary $text $muted $border. Also accepts '#rrggbb' or 'transparent'.`,
+})
+const sizeValue = (axis: string) => ({
+	description: `${axis}: a number of px (fixed), 'fill' (take the remaining space in the parent) or 'hug' (shrink to content). Defaults depend on type.`,
+	anyOf: [{ type: 'number' }, { type: 'string', enum: ['fill', 'hug'] }],
+})
+
+/** Auto-layout fields shared by screens and frames. */
+const layoutProps = {
+	layout: {
+		type: 'string',
+		enum: ['vertical', 'horizontal', 'none'],
+		description: "Auto layout direction of the children (like Figma). 'none' = children positioned by their own x/y.",
 	},
-	required: ['id', 'type', 'x', 'y', 'label'],
+	gap: { type: 'number', description: 'Space between children in px (use the 8px scale: 4, 8, 12, 16, 24, 32).' },
+	padding: {
+		description: 'Inner padding: a number, or [vertical, horizontal], or [top, right, bottom, left].',
+		anyOf: [{ type: 'number' }, { type: 'array', items: { type: 'number' } }],
+	},
+	alignItems: {
+		type: 'string',
+		enum: ['start', 'center', 'end', 'stretch'],
+		description:
+			"Cross-axis alignment. 'stretch' makes children whose size on that axis is 'hug' fill it (default for vertical stacks: full-width text, buttons). Use 'center' to keep hugging buttons/texts their natural width and centered.",
+	},
+	justify: { type: 'string', enum: ['start', 'center', 'end', 'space-between'], description: 'Main-axis distribution.' },
 }
 
-const createArrowParams = {
+/** Every visual prop of a node (everything except id/type/children). */
+const nodeProps = {
+	name: { type: 'string', description: 'Layer name shown in the Layers panel.' },
+	text: { type: 'string', description: 'Text content: text body, button label, input placeholder, checkbox label, avatar name (initials are shown), image caption.' },
+	icon: { type: 'string', enum: ICONS, description: 'Icon for icon/button/input/avatar nodes.' },
+	width: sizeValue('Width'),
+	height: sizeValue('Height'),
+	fill: colorValue('Background color (for toggle/checkbox: the "on" color; for icon: unused)'),
+	textColor: colorValue('Text / icon color'),
+	stroke: colorValue("Border color ('transparent' = none)"),
+	strokeWidth: { type: 'number' },
+	radius: { type: 'number', description: 'Corner radius in px.' },
+	fontSize: { type: 'number' },
+	fontWeight: { type: 'number', enum: [400, 500, 600, 700] },
+	align: { type: 'string', enum: ['left', 'center', 'right'], description: 'Text alignment.' },
+	shadow: { type: 'string', enum: ['none', 'sm', 'md', 'lg'] },
+	opacity: { type: 'number', description: '0..1' },
+	checked: { type: 'boolean', description: 'State of a toggle or checkbox.' },
+	...layoutProps,
+	x: { type: 'number', description: "Position relative to the parent. Only used when the parent's layout is 'none'." },
+	y: { type: 'number' },
+}
+
+const NODE_TYPES = ['frame', 'text', 'button', 'input', 'image', 'icon', 'avatar', 'toggle', 'checkbox', 'divider', 'rect']
+
+/** JSON schema of one UiNodeSpec (children are UiNodeSpecs too). */
+const uiNodeSpec = {
 	type: 'object',
+	description:
+		'A design node. Types: frame (auto-layout container: rows, cards, nav bars, lists), text, button, input, image (placeholder), icon, avatar, toggle, checkbox, divider, rect. Defaults: text hugs; button 48px tall, hugs its label (stretches full-width in vertical stacks); input 48px tall, full width; frame is a vertical stack (gap 12, no padding, full width, hugs height) - set layout:"horizontal" for rows; image full width x 160; divider full width x 1.',
 	properties: {
-		id: { type: 'string' },
-		fromId: { type: 'string', description: 'Start shape ID' },
-		toId: { type: 'string', description: 'Target shape ID' },
-		label: { type: 'string', description: "Optional connection label (e.g., 'gRPC', 'HTTP')" },
-		color,
+		id: { type: 'string', description: "Unique semantic id, e.g. 'login_email'. Prefix with the screen id to keep ids unique across screens." },
+		type: { type: 'string', enum: NODE_TYPES },
+		...nodeProps,
+		children: {
+			type: 'array',
+			description: 'Child nodes (frames only), each with the same shape as this node.',
+			items: { type: 'object' },
+		},
 	},
-	required: ['id', 'fromId', 'toId'],
+	required: ['id', 'type'],
 }
 
 export const DRAWING_TOOLS: ToolDef[] = [
 	{
-		name: 'create_shape',
+		name: 'create_screen',
 		description:
-			'Creates a visual element on the whiteboard canvas (boxes, circles, text, sticky notes). Calling it again with an existing agent-authored id updates that shape. If the position overlaps a student\'s drawing it is nudged to free space; the result reports the final position.',
-		parameters: createShapeParams,
-	},
-	{
-		name: 'create_arrow',
-		description: 'Draws a directed connection arrow between two shapes.',
-		parameters: createArrowParams,
-	},
-	{
-		name: 'draw_array',
-		description:
-			'Renders an array data structure with indices and pointer markers. Call again with the same id to redraw it (e.g., to move pointers on the next algorithm iteration).',
+			'Creates an app screen (artboard) together with its whole node tree in one call. Screens are vertical auto-layout stacks (padding 24, gap 16, stretch) unless overridden. Without x/y it is placed to the right of the existing screens. Calling it again with an existing screen id replaces that screen\'s contents (keeping its position). Returns the laid-out tree with sizes.',
 		parameters: {
 			type: 'object',
 			properties: {
-				id: { type: 'string' },
-				startX: { type: 'number' },
-				startY: { type: 'number' },
-				values: { type: 'array', items: { type: 'string' }, description: 'Array elements' },
-				pointers: {
-					type: 'array',
-					items: {
-						type: 'object',
-						properties: {
-							index: { type: 'integer' },
-							label: { type: 'string', description: "e.g. 'left', 'right', 'mid'" },
-						},
-					},
-				},
-				highlight: {
-					type: 'array',
-					items: { type: 'integer' },
-					description: 'Optional indices to highlight in the current step',
-				},
+				id: { type: 'string', description: "Semantic screen id, e.g. 'login'." },
+				name: { type: 'string', description: "Screen title shown above it, e.g. 'Login'." },
+				device: { type: 'string', enum: Object.keys(DEVICES), description: 'Size preset (default iphone 390x844).' },
+				width: { type: 'number' },
+				height: { type: 'number' },
+				x: { type: 'number' },
+				y: { type: 'number' },
+				theme: { type: 'string', enum: ['light', 'dark'] },
+				primary: { type: 'string', description: "Brand color '#rrggbb' for the $primary token." },
+				fill: colorValue('Screen background (default $bg)'),
+				...layoutProps,
+				children: { type: 'array', items: uiNodeSpec, description: 'Top-level nodes of the screen, top to bottom.' },
 			},
-			required: ['id', 'startX', 'startY', 'values'],
+			required: ['id', 'name'],
 		},
 	},
 	{
-		name: 'update_shape',
+		name: 'add_nodes',
+		description: 'Inserts one or more node subtrees into a screen or frame, at the end or at a given index among its children. The screen is re-laid out.',
+		parameters: {
+			type: 'object',
+			properties: {
+				parentId: { type: 'string', description: 'Id of the screen or frame to insert into.' },
+				index: { type: 'integer', description: 'Position among the existing children (0 = first). Default: append.' },
+				nodes: { type: 'array', items: uiNodeSpec },
+			},
+			required: ['parentId', 'nodes'],
+		},
+	},
+	{
+		name: 'update_node',
 		description:
-			'Modifies an existing shape (move, relabel, recolor). Intended for agent-authored shapes. Changing a student-authored shape asks a student for permission first.',
+			'Changes properties of an existing node or screen (text, colors, size, auto layout, ...). Only the given fields change; children are not replaced (use add_nodes / delete_nodes). Changing a node a user made asks them for permission first.',
 		parameters: {
 			type: 'object',
 			properties: {
 				id: { type: 'string' },
-				x: { type: 'number' },
-				y: { type: 'number' },
-				label: { type: 'string' },
-				color,
+				type: { type: 'string', enum: NODE_TYPES, description: 'Optional: turn the node into another type.' },
+				...nodeProps,
 			},
 			required: ['id'],
 		},
 	},
 	{
+		name: 'move_node',
+		description: 'Reorders a node among its siblings, or moves it into another screen/frame.',
+		parameters: {
+			type: 'object',
+			properties: {
+				id: { type: 'string' },
+				parentId: { type: 'string', description: 'New parent screen/frame (default: keep the current parent).' },
+				index: { type: 'integer', description: 'New position among the parent\'s children (default: last).' },
+			},
+			required: ['id'],
+		},
+	},
+	{
+		name: 'delete_nodes',
+		description: 'Deletes nodes (with their children) or whole screens. Deleting a user\'s nodes asks them for permission first.',
+		parameters: {
+			type: 'object',
+			properties: { ids: { type: 'array', items: { type: 'string' } } },
+			required: ['ids'],
+		},
+	},
+	{
+		name: 'duplicate_screen',
+		description:
+			"Copies a screen with all its nodes, placed to the right of the existing screens. Child ids get the new screen id as prefix (e.g. 'login_title' -> 'signup_title'); the result lists the id mapping.",
+		parameters: {
+			type: 'object',
+			properties: {
+				id: { type: 'string', description: 'Screen to copy.' },
+				newId: { type: 'string' },
+				name: { type: 'string' },
+			},
+			required: ['id', 'newId'],
+		},
+	},
+	{
+		name: 'set_theme',
+		description: "Switches a screen (or 'all' screens) between light and dark mode and/or changes its brand color. Every color token re-resolves, so nothing else needs editing.",
+		parameters: {
+			type: 'object',
+			properties: {
+				screenId: { type: 'string', description: "Screen id, or 'all'." },
+				mode: { type: 'string', enum: ['light', 'dark'] },
+				primary: { type: 'string', description: "Brand color '#rrggbb'." },
+			},
+			required: ['screenId'],
+		},
+	},
+	{
+		name: 'connect_screens',
+		description: 'Draws a prototype flow arrow from a node (e.g. a button) or screen to another screen, like a Figma prototype connection.',
+		parameters: {
+			type: 'object',
+			properties: {
+				id: { type: 'string' },
+				fromId: { type: 'string', description: 'Node or screen the interaction starts from.' },
+				toId: { type: 'string', description: 'Destination screen.' },
+				label: { type: 'string', description: "Optional trigger label, e.g. 'On tap'." },
+			},
+			required: ['id', 'fromId', 'toId'],
+		},
+	},
+	{
 		name: 'focus_view',
 		description:
-			"Pan or zoom the canvas viewport to focus attention on specific shapes. 'scope' controls whether everyone's view moves or only the requesting user's.",
+			"Pan or zoom the canvas viewport to focus attention on specific screens or nodes. 'scope' controls whether everyone's view moves or only the requesting user's.",
 		parameters: {
 			type: 'object',
 			properties: {
@@ -122,7 +221,7 @@ export const DRAWING_TOOLS: ToolDef[] = [
 	{
 		name: 'clear_canvas',
 		description:
-			"Clears elements from the whiteboard. 'agent_only' removes only your own shapes. 'all' or 'selection' that would remove student-authored shapes asks a student for confirmation first.",
+			"Clears elements from the canvas. 'agent_only' removes only your own shapes. 'all' or 'selection' that would remove user-made shapes asks a user for confirmation first.",
 		parameters: {
 			type: 'object',
 			properties: {
@@ -138,12 +237,12 @@ export const READING_TOOLS: ToolDef[] = [
 	{
 		name: 'get_canvas_state',
 		description:
-			'Returns a structured description of shapes on the canvas: id, type, bounds, label/text, color, arrow connections (fromId/toId), and author. Use this to understand diagrams and arrays students have drawn.',
+			'Returns the design: every screen as a nested tree of nodes (id, type, name, text, x/y relative to the parent, w/h, width/height sizing when not fixed, colors, auto layout, author), plus any other shapes (sketches, notes, arrows) as a flat list. Pass shapeIds to get only those screens/nodes (with their subtrees).',
 		parameters: {
 			type: 'object',
 			properties: {
 				region,
-				shapeIds: { type: 'array', items: { type: 'string' }, description: 'Optional explicit shapes to return' },
+				shapeIds: { type: 'array', items: { type: 'string' }, description: 'Optional explicit screens/nodes/shapes to return' },
 				author: { type: 'string', enum: ['any', 'user', 'agent'], default: 'any' },
 			},
 		},
@@ -151,7 +250,7 @@ export const READING_TOOLS: ToolDef[] = [
 	{
 		name: 'get_canvas_image',
 		description:
-			'Renders the canvas (or a region / set of shapes) to a PNG and shows it to you. Required for freehand drawings, handwriting, and sketches without labels.',
+			'Renders the canvas (or a region / set of screens) to a PNG and shows it to you. Use it to judge visual quality, and for hand-drawn sketches or wireframes without structure.',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -164,7 +263,7 @@ export const READING_TOOLS: ToolDef[] = [
 	{
 		name: 'get_recent_changes',
 		description:
-			'Returns shapes created, updated, or deleted by students since you last looked (or since a given timestamp), grouped by student.',
+			'Returns shapes created, updated, or deleted by users since you last looked (or since a given timestamp), grouped by user.',
 		parameters: {
 			type: 'object',
 			properties: { since: { type: 'string', description: "ISO timestamp; defaults to the agent's last review" } },
@@ -172,8 +271,7 @@ export const READING_TOOLS: ToolDef[] = [
 	},
 	{
 		name: 'get_participants',
-		description:
-			'Lists connected students with name, color, cursor position, current selection, and whether they are actively drawing.',
+		description: 'Lists connected users with name, color, cursor position, current selection, and whether they are actively editing.',
 		parameters: { type: 'object', properties: {} },
 	},
 ]
@@ -182,7 +280,7 @@ export const FEEDBACK_TOOLS: ToolDef[] = [
 	{
 		name: 'highlight_shapes',
 		description:
-			'Draws a colored outline / circle around shapes to point at them (red for an error, green for correct). Non-destructive.',
+			'Draws a colored outline around nodes or screens to point at them during a critique (red = problem, green = good). Non-destructive.',
 		parameters: {
 			type: 'object',
 			properties: {
@@ -196,33 +294,17 @@ export const FEEDBACK_TOOLS: ToolDef[] = [
 	},
 	{
 		name: 'add_comment',
-		description:
-			'Places a callout sticky note next to a shape with feedback text, connected by a short leader arrow.',
+		description: 'Pins a design-review comment (sticky note with a leader line) next to a node or screen.',
 		parameters: {
 			type: 'object',
 			properties: {
 				id: { type: 'string' },
 				targetShapeId: { type: 'string' },
 				text: { type: 'string' },
-				kind: { type: 'string', enum: ['error', 'hint', 'praise', 'question'] },
-				addressedTo: { type: 'string', description: 'Optional student name the comment is for' },
+				kind: { type: 'string', enum: ['issue', 'suggestion', 'praise', 'question'] },
+				addressedTo: { type: 'string', description: 'Optional user name the comment is for' },
 			},
 			required: ['id', 'text', 'kind'],
-		},
-	},
-	{
-		name: 'suggest_correction',
-		description:
-			"Draws a proposed fix as a dashed, semi-transparent overlay next to the student's work without modifying it. Students can accept or dismiss it. Each entry in 'shapes' uses the create_shape argument format, or the create_arrow format (entries with fromId/toId).",
-		parameters: {
-			type: 'object',
-			properties: {
-				id: { type: 'string' },
-				forShapeIds: { type: 'array', items: { type: 'string' } },
-				shapes: { type: 'array', items: { type: 'object' } },
-				explanation: { type: 'string' },
-			},
-			required: ['id', 'shapes'],
 		},
 	},
 ]
@@ -236,11 +318,11 @@ export const SERVER_TOOLS = new Set(['get_recent_changes'])
 export const LOOK_AT_BOARD: ToolDef = {
 	name: 'look_at_board',
 	description:
-		"Takes a picture of the board (or of specific shapes) and gets a description of what is drawn, including hand-drawn ink and handwriting. Use it before giving feedback on freehand or unlabeled drawings. Say a short line like 'Let me take a look' first.",
+		"Takes a picture of the canvas (or of specific screens) and gets a description of what it looks like, including hand-drawn sketches. Use it before critiquing visual quality. Say a short line like 'Let me take a look' first.",
 	parameters: {
 		type: 'object',
 		properties: {
-			question: { type: 'string', description: 'What you want to know about the drawing' },
+			question: { type: 'string', description: 'What you want to know about the design' },
 			shapeIds: { type: 'array', items: { type: 'string' } },
 		},
 	},

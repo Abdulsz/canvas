@@ -16,6 +16,8 @@ export type ShapeSummary = {
 	id: string
 	type: string
 	geo?: string
+	/** For 'ui' shapes: screen, frame, button, ... */
+	kind?: string
 	label?: string
 	x: number
 	y: number
@@ -33,7 +35,8 @@ export function richTextToPlain(node: any): string {
 export function shapeLabel(shape: ShapeRecord): string {
 	const p = shape.props ?? {}
 	if (p.richText) return richTextToPlain(p.richText).trim()
-	if (typeof p.text === 'string') return p.text.trim()
+	if (typeof p.text === 'string' && p.text.trim()) return p.text.trim()
+	if (shape.type === 'ui' && typeof p.name === 'string') return p.name.trim()
 	return ''
 }
 
@@ -45,6 +48,7 @@ export function summarizeShape(shape: ShapeRecord): ShapeSummary {
 		id: stripId(shape.id),
 		type: shape.type,
 		...(shape.props?.geo ? { geo: shape.props.geo } : {}),
+		...(shape.type === 'ui' && shape.props?.kind ? { kind: shape.props.kind } : {}),
 		...(label ? { label } : {}),
 		x: Math.round(shape.x),
 		y: Math.round(shape.y),

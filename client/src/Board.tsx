@@ -19,8 +19,10 @@ import {
 } from 'tldraw'
 import { AGENT_NAME } from '../../shared/protocol.ts'
 import { registerAuthorship } from './agent/authorship.ts'
+import { CanvasExecutor } from './agent/executor.ts'
 import { useAgent } from './agent/useAgent.ts'
 import { AgentPanel, Orb } from './components/AgentPanel.tsx'
+import { customShapeUtils, syncShapeUtils } from './design/shapes.ts'
 import type { Identity } from './identity.ts'
 
 const assets: TLAssetStore = {
@@ -113,6 +115,7 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 		assets,
 		users,
 		themes,
+		shapeUtils: syncShapeUtils,
 	})
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const agent = useAgent(roomId, me, editor)
@@ -123,12 +126,14 @@ export function Board({ roomId, me }: { roomId: string; me: Identity }) {
 				<AgentCursorContext.Provider value={agent.state.agentCursor}>
 					<Tldraw
 						store={store}
+						shapeUtils={customShapeUtils}
 						assetUrls={assetUrls}
 						themes={themes}
 						licenseKey={import.meta.env.VITE_TLDRAW_LICENSE_KEY}
 						components={components}
 						onMount={(e) => {
 							;(window as any).__editor = e
+							;(window as any).__executor = new CanvasExecutor(e)
 							// Follow the OS light/dark appearance, like the rest of the app.
 							e.user.updateUserPreferences({ colorScheme: 'system' })
 							setEditor(e)

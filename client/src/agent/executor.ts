@@ -10,9 +10,28 @@ import {
 	type TLShapeId,
 	type TLShapePartial,
 } from 'tldraw'
-import type { Author, ToolResult } from '../../../shared/protocol.ts'
+import {
+	applySpec,
+	DEFAULT_THEME,
+	DEVICES,
+	isContainerKind,
+	KIND_DEFAULTS,
+	layoutTree,
+	normalizeKind,
+	specToTree,
+	toLayoutNode,
+	type Device,
+	type ThemeSpec,
+	type UiMeta,
+	type UiNodeSpec,
+	type UiProps,
+	type UiTreeNode,
+} from '../../../shared/design.ts'
+import { AGENT_NAME, type Author, type ToolResult } from '../../../shared/protocol.ts'
+import { measureTextDom } from '../design/measure.ts'
+import type { UiShape } from '../design/UiShapeUtil.tsx'
 import { AGENT_AUTHOR, asAgent, authorOf } from './authorship.ts'
-import { findFreeSpot, unionBounds } from './layout.ts'
+import { findFreeSpot, nextScreenPosition, unionBounds } from './layout.ts'
 
 type Args = Record<string, any>
 
@@ -26,8 +45,20 @@ const toId = (id: unknown): TLShapeId => {
 	return createShapeId(s.replace(/[^a-zA-Z0-9_-]/g, '_') || crypto.randomUUID())
 }
 const bare = (id: string) => id.replace(/^shape:/, '')
+const cleanId = (id: unknown) => bare(toId(id))
 
 const agentMeta = (extra: Args = {}) => ({ author: AGENT_AUTHOR, ...extra })
+
+const isUi = (s: TLShape | undefined): s is UiShape => s?.type === 'ui'
+const isScreen = (s: TLShape | undefined): s is UiShape => isUi(s) && s.props.kind === 'screen'
+const isContainer = (s: TLShape | undefined): s is UiShape => isUi(s) && isContainerKind(s.props.kind)
+const round = (n: number) => Math.round(n * 10) / 10
+
+/** Spec fields update_node accepts (everything except id/children). */
+const SPEC_KEYS = [
+	'name', 'text', 'icon', 'width', 'height', 'fill', 'textColor', 'stroke', 'strokeWidth', 'radius', 'fontSize', 'fontWeight',
+	'align', 'shadow', 'opacity', 'checked', 'layout', 'gap', 'padding', 'alignItems', 'justify',
+] as const
 
 export type ExecutorHooks = {
 	/** Where the agent "is" on the canvas, for its presence cursor. */
@@ -36,7 +67,9 @@ export type ExecutorHooks = {
 
 /**
  * Applies Grok's tool calls to the tldraw editor. Edits go into the synced
- * store, so every student in the room sees them.
+ * store, so every user in the room sees them. Design nodes are 'ui' shapes;
+ * after each structural edit the affected screen is re-laid out with the
+ * shared auto-layout engine.
  */
 export class CanvasExecutor {
 	constructor(
@@ -61,6 +94,7 @@ export class CanvasExecutor {
 	// ------------------------------------------------------------ helpers
 
 	private _label(shape: TLShape): string {
+		if (isUi(shape)) return shape.props.text || shape.props.name
 		const rt = (shape.props as any).richText
 		return rt ? renderPlaintextFromRichText(this.editor, rt).trim() : ''
 	}
@@ -74,16 +108,227 @@ export class CanvasExecutor {
 		if (b) this._point(b.center.x, b.center.y)
 	}
 
+	private _knownIds(filter: (s: TLShape) => boolean = () => true, max = 60) {
+		const ids = this.editor.getCurrentPageShapes().filter(filter).map((s) => bare(s.id))
+		return ids.length ? ids.slice(0, max).join(', ') + (ids.length > max ? ', ...' : '') : '(none)'
+	}
+
 	private _require(id: unknown): TLShape {
 		const shape = this.editor.getShape(toId(id))
-		if (!shape) {
-			const known = this.editor
-				.getCurrentPageShapes()
-				.slice(0, 40)
-				.map((s) => bare(s.id))
-			throw new Error(`No shape with id "${id}". Existing ids: ${known.join(', ') || '(board is empty)'}`)
+		if (!shape) throw new Error(`No shape with id "${id}". Existing ids: ${this._knownIds()}`)
+		return shape
+	}
+
+	private _requireUi(id: unknown): UiShape {
+		const shape = this.editor.getShape(toId(id))
+		if (!isUi(shape)) {
+			throw new Error(
+				`No design node with id "${id}"${shape ? ` (it is a ${shape.type} shape)` : ''}. Existing nodes: ${this._knownIds(isUi)}`
+			)
 		}
 		return shape
+	}
+
+	private _requireContainer(id: unknown): UiShape {
+		const shape = this.editor.getShape(toId(id))
+		if (!isContainer(shape)) {
+			const any = shape as TLShape | undefined
+			const what = isUi(any) ? ` (it is a ${any.props.kind}, which can't have children)` : any ? ` (it is a ${any.type} shape)` : ''
+			throw new Error(`No screen or frame with id "${id}"${what}. Screens/frames: ${this._knownIds(isContainer)}`)
+		}
+		return shape
+	}
+
+	private _requireScreen(id: unknown): UiShape {
+		const shape = this.editor.getShape(toId(id))
+		if (!isScreen(shape)) throw new Error(`No screen with id "${id}". Screens: ${this._knownIds(isScreen)}`)
+		return shape
+	}
+
+	/** Topmost ui ancestor (usually the screen) that owns the layout of `shape`. */
+	private _layoutRoot(shape: TLShape): UiShape | null {
+		let root: UiShape | null = isUi(shape) ? shape : null
+		let cur = this.editor.getShape(shape.parentId as TLShapeId)
+		while (cur) {
+			if (isUi(cur)) root = cur
+			cur = this.editor.getShape(cur.parentId as TLShapeId)
+		}
+		return root
+	}
+
+	private _screenOf(shape: TLShape): UiShape | null {
+		let cur: TLShape | undefined = shape
+		while (cur) {
+			if (isScreen(cur)) return cur
+			cur = this.editor.getShape(cur.parentId as TLShapeId)
+		}
+		return null
+	}
+
+	private _meta(shape: UiShape): UiMeta {
+		const m = shape.meta as Partial<UiMeta>
+		return {
+			...(m as object),
+			sizing: { ...(KIND_DEFAULTS[shape.props.kind]?.sizing ?? { w: 'fixed', h: 'fixed' }), ...(m.sizing ?? {}) },
+			...(m.layout ? { layout: m.layout } : {}),
+		} as UiMeta
+	}
+
+	/** Children of a ui container in layout order. */
+	private _children(shape: TLShape): UiShape[] {
+		const editor = this.editor
+		return editor
+			.getSortedChildIdsForParent(shape.id)
+			.map((id) => editor.getShape(id))
+			.filter(isUi)
+			.map((s, i) => ({ s, i }))
+			.sort((a, b) => ((a.s.meta?.order as number) ?? a.i) - ((b.s.meta?.order as number) ?? b.i) || a.i - b.i)
+			.map(({ s }) => s)
+	}
+
+	/** Reads a ui subtree from the editor into a resolved tree. */
+	private _toTree(shape: UiShape): UiTreeNode {
+		return {
+			id: bare(shape.id),
+			props: { ...shape.props },
+			meta: this._meta(shape),
+			x: shape.x,
+			y: shape.y,
+			children: this._children(shape).map((c, i) => {
+				const t = this._toTree(c)
+				t.meta.order = i
+				return t
+			}),
+		}
+	}
+
+	/** Re-runs auto layout on a screen/root and writes back the changed boxes. */
+	private _relayout(root: UiShape | null) {
+		if (!root || !this.editor.getShape(root.id)) return
+		const editor = this.editor
+		const tree = this._toTree(editor.getShape(root.id) as UiShape)
+		const boxes = layoutTree(toLayoutNode(tree), { measure: measureTextDom })
+		const updates: TLShapePartial[] = []
+		const walk = (n: UiTreeNode, isRoot: boolean) => {
+			const b = boxes.get(n.id)
+			if (b) {
+				const s = editor.getShape(toId(n.id)) as UiShape
+				const changed =
+					(!isRoot && (Math.abs(s.x - b.x) > 0.01 || Math.abs(s.y - b.y) > 0.01)) ||
+					Math.abs(s.props.w - b.w) > 0.01 ||
+					Math.abs(s.props.h - b.h) > 0.01
+				if (changed) {
+					updates.push({ id: s.id, type: 'ui', ...(isRoot ? {} : { x: b.x, y: b.y }), props: { w: b.w, h: b.h } } as TLShapePartial)
+				}
+			}
+			n.children.forEach((c) => walk(c, false))
+		}
+		walk(tree, true)
+		if (updates.length) editor.updateShapes(updates)
+	}
+
+	/** Makes every id in `tree` (except the root) unique on the page; returns renames. */
+	private _dedupeIds(tree: UiTreeNode, prefix: string, replaceable: Set<string> = new Set()) {
+		const renamed: Record<string, string> = {}
+		const used = new Set<string>()
+		const taken = (id: string) => used.has(id) || (!!this.editor.getShape(toId(id)) && !replaceable.has(id))
+		const walk = (n: UiTreeNode, isRoot: boolean) => {
+			n.id = cleanId(n.id || `${prefix}_${n.props.kind}`)
+			if (!isRoot && taken(n.id)) {
+				const original = n.id
+				let candidate = n.id.startsWith(`${prefix}_`) ? n.id : `${prefix}_${n.id}`
+				for (let k = 2; taken(candidate); k++) candidate = `${prefix}_${original}_${k}`
+				renamed[original] = candidate
+				n.id = candidate
+			}
+			used.add(n.id)
+			n.children.forEach((c) => walk(c, false))
+		}
+		walk(tree, true)
+		return renamed
+	}
+
+	/** Creates the shapes of a resolved tree (root included) under `parentId`. */
+	private _createTree(tree: UiTreeNode, parentId: TLShapeId | undefined, rootExtraMeta: Args = {}) {
+		const partials: TLShapePartial[] = []
+		const walk = (n: UiTreeNode, parent: TLShapeId | undefined, isRoot: boolean) => {
+			const id = toId(n.id)
+			partials.push({
+				id,
+				type: 'ui',
+				x: n.x,
+				y: n.y,
+				...(parent ? { parentId: parent } : {}),
+				props: n.props,
+				meta: agentMeta({ ...n.meta, ...(isRoot ? rootExtraMeta : {}) }),
+			} as TLShapePartial)
+			n.children.forEach((c) => walk(c, id, false))
+		}
+		walk(tree, parentId, true)
+		this.editor.createShapes(partials as any)
+	}
+
+	/** Writes meta.order for a parent's children in the given order. */
+	private _setOrder(children: UiShape[]) {
+		this.editor.updateShapes(children.map((c, i) => ({ id: c.id, type: 'ui', meta: { ...c.meta, order: i } }) as TLShapePartial))
+	}
+
+	/** Compact nested summary of a ui subtree. */
+	private _node(shape: UiShape, brief = false): Args {
+		const p = shape.props
+		const m = this._meta(shape)
+		const out: Args = { id: bare(shape.id), type: p.kind }
+		if (p.name && p.name !== out.id) out.name = p.name
+		if (p.text) out.text = p.text
+		if (p.icon && ['icon', 'button', 'input', 'avatar', 'image'].includes(p.kind)) out.icon = p.icon
+		if (isScreen(shape)) {
+			const b = this.editor.getShapePageBounds(shape)!
+			Object.assign(out, { x: Math.round(b.x), y: Math.round(b.y) })
+		} else Object.assign(out, { x: round((shape as UiShape).x), y: round((shape as UiShape).y) })
+		Object.assign(out, { w: round(p.w), h: round(p.h) })
+		if (m.sizing.w !== 'fixed') out.width = m.sizing.w
+		if (m.sizing.h !== 'fixed') out.height = m.sizing.h
+		if (!brief) {
+			if (p.fill !== 'transparent') out.fill = p.fill
+			if (['text', 'button', 'input', 'checkbox', 'icon', 'avatar'].includes(p.kind)) {
+				out.textColor = p.textColor
+				if (p.kind !== 'icon') Object.assign(out, { fontSize: p.fontSize, fontWeight: p.fontWeight })
+			}
+			if (p.kind === 'text' && p.align !== 'left') out.align = p.align
+			if (p.stroke !== 'transparent') Object.assign(out, { stroke: p.stroke, strokeWidth: p.strokeWidth })
+			if (p.radius) out.radius = p.radius
+			if (p.shadow !== 'none') out.shadow = p.shadow
+			if (p.opacity !== 1) out.opacity = p.opacity
+			if (p.kind === 'toggle' || p.kind === 'checkbox') out.checked = p.checked
+			if (m.layout && isContainerKind(p.kind)) {
+				const l = m.layout
+				Object.assign(out, { layout: l.mode, gap: l.gap, padding: l.padding, alignItems: l.alignItems, justify: l.justify })
+			}
+			if (isScreen(shape)) out.theme = { ...DEFAULT_THEME, ...((shape.meta?.theme as object) ?? {}) }
+			const author = authorOf(shape)
+			if (author?.kind === 'user') out.author = { kind: author.kind, name: author.name }
+		}
+		const children = this._children(shape)
+		if (children.length) out.children = children.map((c) => this._node(c, brief))
+		return out
+	}
+
+	/** Warnings about content that doesn't fit, so the model can fix it. */
+	private _warnings(root: UiShape): string[] {
+		const warnings: string[] = []
+		const walk = (s: UiShape) => {
+			const kids = this._children(s)
+			if (isContainerKind(s.props.kind) && kids.length) {
+				const bottom = Math.max(...kids.map((k) => k.y + k.props.h))
+				const right = Math.max(...kids.map((k) => k.x + k.props.w))
+				if (bottom > s.props.h + 1) warnings.push(`Content of "${bare(s.id)}" overflows its height by ${Math.round(bottom - s.props.h)}px (clipped). Reduce content/gaps or make it taller.`)
+				if (right > s.props.w + 1) warnings.push(`Content of "${bare(s.id)}" overflows its width by ${Math.round(right - s.props.w)}px (clipped).`)
+				for (const k of kids) if (k.props.w < 1 && k.props.kind !== 'divider') warnings.push(`"${bare(k.id)}" has no room (width 0) in its row.`)
+			}
+			kids.forEach(walk)
+		}
+		walk(root)
+		return warnings.slice(0, 8)
 	}
 
 	private _deleteWithArrows(ids: TLShapeId[]) {
@@ -91,7 +336,14 @@ export class CanvasExecutor {
 	}
 
 	/** Creates (or recreates) an arrow bound to two shapes. */
-	private _arrow(id: TLShapeId, from: TLShape, to: TLShape, props: Args, meta: Args) {
+	private _arrow(
+		id: TLShapeId,
+		from: TLShape,
+		to: TLShape,
+		props: Args,
+		meta: Args,
+		anchors: { start?: { x: number; y: number }; end?: { x: number; y: number } } = {}
+	) {
 		const editor = this.editor
 		if (editor.getShape(id)) editor.deleteShapes([id])
 		const a = editor.getShapePageBounds(from)!.center
@@ -104,15 +356,19 @@ export class CanvasExecutor {
 			meta,
 			props: { start: { x: 0, y: 0 }, end: { x: b.x - a.x, y: b.y - a.y }, ...props },
 		})
-		const binding = (terminal: 'start' | 'end', target: TLShape) => ({
-			type: 'arrow' as const,
-			fromId: id,
-			toId: target.id,
-			props: { terminal, normalizedAnchor: { x: 0.5, y: 0.5 }, isExact: false, isPrecise: false, snap: 'none' as const },
-		})
+		const binding = (terminal: 'start' | 'end', target: TLShape) => {
+			const anchor = anchors[terminal]
+			return {
+				type: 'arrow' as const,
+				fromId: id,
+				toId: target.id,
+				props: { terminal, normalizedAnchor: anchor ?? { x: 0.5, y: 0.5 }, isExact: false, isPrecise: !!anchor, snap: 'none' as const },
+			}
+		}
 		editor.createBindings<TLArrowBinding>([binding('start', from), binding('end', to)])
 	}
 
+	/** Flat summary of a non-design shape (sketches, notes, arrows, comments). */
 	private _serialize(shape: TLShape) {
 		const editor = this.editor
 		const b = editor.getShapePageBounds(shape)
@@ -126,7 +382,7 @@ export class CanvasExecutor {
 		const author = authorOf(shape)
 		if (author) out.author = { kind: author.kind, name: author.name }
 		if (shape.meta?.role) out.role = shape.meta.role
-		if (shape.meta?.suggestion) out.suggestion = true
+		if (shape.meta?.kind) out.kind = shape.meta.kind
 		if (shape.type === 'arrow') {
 			for (const binding of editor.getBindingsFromShape<TLArrowBinding>(shape, 'arrow')) {
 				out[binding.props.terminal === 'start' ? 'fromId' : 'toId'] = bare(binding.toId)
@@ -159,163 +415,283 @@ export class CanvasExecutor {
 		return shapes
 	}
 
-	// ------------------------------------------------------- drawing tools
+	// ---------------------------------------------------------- design tools
 
-	create_shape(args: Args) {
+	create_screen(args: Args) {
 		const editor = this.editor
+		if (!args.id) throw new Error('create_screen needs an id')
 		const id = toId(args.id)
-		const type = ['geo', 'text', 'note'].includes(args.type) ? args.type : 'geo'
-		const w = Number(args.w) || (type === 'note' ? 200 : 160)
-		const h = Number(args.h) || (type === 'note' ? 200 : 80)
 		const existing = editor.getShape(id)
+		if (existing && !isScreen(existing)) {
+			throw new Error(`Id "${bare(id)}" is already used by a ${(existing as TLShape).type === 'ui' ? ((existing as TLShape).props as UiProps).kind : (existing as TLShape).type}. Pick another screen id.`)
+		}
+		const device = DEVICES[args.device as Device]
+		const w = Number(args.width) || device?.w || (existing as UiShape | undefined)?.props.w || DEVICES.iphone.w
+		const h = Number(args.height) || device?.h || (existing as UiShape | undefined)?.props.h || DEVICES.iphone.h
+		const { theme, primary, device: _d, x, y, ...spec } = args
+		const tree = specToTree({ ...(spec as UiNodeSpec), id: bare(id), width: w, height: h }, 'screen')
+		tree.props.name = String(args.name ?? (existing as UiShape | undefined)?.props.name ?? bare(id))
+		const prevTheme = (existing?.meta?.theme as Partial<ThemeSpec> | undefined) ?? {}
+		const themeMeta: ThemeSpec = {
+			mode: theme === 'dark' || theme === 'light' ? theme : (prevTheme.mode ?? 'light'),
+			primary: typeof primary === 'string' && primary ? primary : (prevTheme.primary ?? DEFAULT_THEME.primary),
+		}
 		const pos =
-			existing && existing.type === type
-				? { x: Number(args.x ?? existing.x), y: Number(args.y ?? existing.y), nudged: false }
-				: findFreeSpot(editor, new Box(Number(args.x) || 0, Number(args.y) || 0, w, h))
-		const richText = toRichText(String(args.label ?? ''))
-		const c = color(args.color)
-		const props: Args =
-			type === 'geo'
-				? { geo: ['rectangle', 'ellipse', 'diamond'].includes(args.geo) ? args.geo : 'rectangle', w, h, richText, color: c, fill: 'semi', size: 's' }
-				: type === 'note'
-					? { richText, color: args.color ? c : 'yellow', size: 's' }
-					: { richText, color: c, size: 's', ...(Number(args.w) > 0 ? { autoSize: false, w: Number(args.w) } : {}) }
+			typeof x === 'number' && typeof y === 'number'
+				? { x, y }
+				: existing
+					? { x: typeof x === 'number' ? x : existing.x, y: typeof y === 'number' ? y : existing.y }
+					: nextScreenPosition(editor, w, h)
+		tree.x = pos.x
+		tree.y = pos.y
+		const replaceable = new Set(existing ? editor.getShapeAndDescendantIds([existing.id]) : [])
+		const renamedRaw = this._dedupeIds(tree, bare(id), new Set([...replaceable].map(bare)))
 
-		asAgent(() => {
-			if (existing && existing.type === type) {
-				editor.updateShape({ id, type, x: pos.x, y: pos.y, props })
-			} else {
-				if (existing) editor.deleteShapes([id])
-				editor.createShape({ id, type, x: pos.x, y: pos.y, props, meta: agentMeta() })
-			}
-		})
+		asAgent(() =>
+			editor.run(() => {
+				if (existing) {
+					editor.deleteShapes(editor.getSortedChildIdsForParent(existing.id))
+					editor.updateShape({
+						id,
+						type: 'ui',
+						x: pos.x,
+						y: pos.y,
+						props: tree.props,
+						meta: { ...existing.meta, ...tree.meta, theme: themeMeta, updatedBy: AGENT_AUTHOR },
+					} as TLShapePartial)
+					for (const child of tree.children) this._createTree(child, id)
+				} else {
+					this._createTree(tree, undefined, { theme: themeMeta })
+				}
+				this._relayout(editor.getShape(id) as UiShape)
+			})
+		)
+		const screen = editor.getShape(id) as UiShape
 		this._pointAt(id)
-		const b = editor.getShapePageBounds(id)!
-		return { id: bare(id), x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h), nudged: pos.nudged }
+		const warnings = this._warnings(screen)
+		return {
+			...this._node(screen, true),
+			...(Object.keys(renamedRaw).length ? { renamedIds: renamedRaw } : {}),
+			...(warnings.length ? { warnings } : {}),
+		}
 	}
 
-	create_arrow(args: Args) {
+	add_nodes(args: Args) {
+		const editor = this.editor
+		const parent = this._requireContainer(args.parentId)
+		const specs: UiNodeSpec[] = (Array.isArray(args.nodes) ? args.nodes : args.nodes ? [args.nodes] : []).filter((n: any) => n && typeof n === 'object')
+		if (!specs.length) throw new Error('nodes must be a non-empty array of node specs')
+		const prefix = bare((this._screenOf(parent) ?? parent).id)
+		const trees = specs.map((s) => specToTree(s.type === 'screen' ? { ...s, type: 'frame' } : s))
+		const renamed: Record<string, string> = {}
+		const used = new Set<string>()
+		for (const t of trees) {
+			if (!t.id || used.has(cleanId(t.id)) || editor.getShape(toId(t.id))) {
+				const original = t.id || t.props.kind
+				let candidate = `${prefix}_${cleanId(original)}`
+				for (let k = 2; used.has(candidate) || editor.getShape(toId(candidate)); k++) candidate = `${prefix}_${cleanId(original)}_${k}`
+				renamed[original] = candidate
+				t.id = candidate
+			}
+			Object.assign(renamed, this._dedupeIds(t, prefix))
+			used.add(cleanId(t.id))
+		}
+		const existing = this._children(parent)
+		const index = Number.isInteger(args.index) ? Math.max(0, Math.min(existing.length, args.index)) : existing.length
+		asAgent(() =>
+			editor.run(() => {
+				for (const t of trees) this._createTree(t, parent.id)
+				const added = trees.map((t) => editor.getShape(toId(t.id)) as UiShape)
+				this._setOrder([...existing.slice(0, index), ...added, ...existing.slice(index)])
+				this._relayout(this._layoutRoot(parent))
+			})
+		)
+		this._pointAt(toId(trees[0].id))
+		const root = this._layoutRoot(parent)
+		const warnings = root ? this._warnings(root) : []
+		return {
+			parentId: bare(parent.id),
+			added: trees.map((t) => this._node(editor.getShape(toId(t.id)) as UiShape, true)),
+			...(Object.keys(renamed).length ? { renamedIds: renamed } : {}),
+			...(warnings.length ? { warnings } : {}),
+		}
+	}
+
+	update_node(args: Args) {
+		const editor = this.editor
+		const shape = this._requireUi(args.id)
+		let props: UiProps = { ...shape.props }
+		let meta: UiMeta = this._meta(shape)
+		if (args.type !== undefined && shape.props.kind !== 'screen') {
+			const kind = normalizeKind(args.type)
+			if (kind !== props.kind && kind !== 'screen') {
+				if (!isContainerKind(kind) && this._children(shape).length) {
+					throw new Error(`"${args.id}" has children; a ${kind} can't contain nodes. Move or delete its children first.`)
+				}
+				const d = KIND_DEFAULTS[kind]
+				props = { ...props, ...d.props, ...(props.text ? { text: props.text } : {}), kind, w: props.w, h: props.h }
+				meta = { ...meta, sizing: { ...d.sizing }, ...(d.layout ? { layout: meta.layout ?? d.layout } : {}) }
+				if (!d.layout) delete meta.layout
+			}
+		}
+		const patch: Partial<UiNodeSpec> = {}
+		for (const k of SPEC_KEYS) if (args[k] !== undefined) (patch as any)[k] = args[k]
+		const next = applySpec(props, meta, patch)
+		const parent = editor.getShape(shape.parentId as TLShapeId)
+		const free = !isUi(parent) || (this._meta(parent).layout?.mode ?? 'none') === 'none'
+		asAgent(() =>
+			editor.run(() => {
+				editor.updateShape({
+					id: shape.id,
+					type: 'ui',
+					...(free && typeof args.x === 'number' ? { x: args.x } : {}),
+					...(free && typeof args.y === 'number' ? { y: args.y } : {}),
+					props: next.props,
+					meta: { ...shape.meta, ...next.meta },
+				} as TLShapePartial)
+				this._relayout(this._layoutRoot(shape))
+			})
+		)
+		this._pointAt(shape.id)
+		return this._node(editor.getShape(shape.id) as UiShape, true)
+	}
+
+	move_node(args: Args) {
+		const editor = this.editor
+		const shape = this._requireUi(args.id)
+		if (shape.props.kind === 'screen' && args.parentId) throw new Error('Screens are top level; they cannot be moved into another node.')
+		const oldParent = editor.getShape(shape.parentId as TLShapeId)
+		const newParent = args.parentId ? this._requireContainer(args.parentId) : oldParent
+		if (!isContainer(newParent)) throw new Error(`"${args.id}" is not inside a screen or frame; pass parentId.`)
+		if (newParent.id === shape.id || editor.hasAncestor(newParent, shape.id)) throw new Error(`Can't move "${args.id}" into itself.`)
+		const oldRoot = this._layoutRoot(shape)
+		asAgent(() =>
+			editor.run(() => {
+				if (newParent.id !== shape.parentId) editor.reparentShapes([shape.id], newParent.id)
+				const siblings = this._children(newParent).filter((s) => s.id !== shape.id)
+				const index = Number.isInteger(args.index) ? Math.max(0, Math.min(siblings.length, args.index)) : siblings.length
+				siblings.splice(index, 0, editor.getShape(shape.id) as UiShape)
+				this._setOrder(siblings)
+				if (isContainer(oldParent) && oldParent.id !== newParent.id) this._setOrder(this._children(oldParent))
+				const newRoot = this._layoutRoot(newParent)
+				this._relayout(newRoot)
+				if (oldRoot && oldRoot.id !== newRoot?.id) this._relayout(oldRoot)
+			})
+		)
+		this._pointAt(shape.id)
+		return {
+			id: bare(shape.id),
+			parentId: bare(newParent.id),
+			order: this._children(newParent).map((s) => bare(s.id)),
+		}
+	}
+
+	delete_nodes(args: Args) {
+		const editor = this.editor
+		const ids: string[] = (Array.isArray(args.ids) ? args.ids : args.id ? [args.id] : []).map(String)
+		const shapes = ids.map((id) => editor.getShape(toId(id))).filter((s): s is TLShape => !!s)
+		const missing = ids.filter((id) => !editor.getShape(toId(id)))
+		if (!shapes.length) throw new Error(`None of those ids exist: ${ids.join(', ')}. Existing nodes: ${this._knownIds(isUi)}`)
+		const doomed = new Set(editor.getShapeAndDescendantIds(shapes.map((s) => s.id)))
+		const parents = [...new Set(shapes.map((s) => s.parentId as TLShapeId))]
+		const roots = [...new Set(shapes.map((s) => this._layoutRoot(s)).filter((r): r is UiShape => !!r && !doomed.has(r.id)))]
+		asAgent(() =>
+			editor.run(() => {
+				this._deleteWithArrows(shapes.map((s) => s.id))
+				for (const p of parents) {
+					const parent = editor.getShape(p)
+					if (isContainer(parent)) this._setOrder(this._children(parent))
+				}
+				for (const r of roots) this._relayout(editor.getShape(r.id) as UiShape)
+			})
+		)
+		return { deleted: shapes.map((s) => bare(s.id)), ...(missing.length ? { notFound: missing } : {}) }
+	}
+
+	duplicate_screen(args: Args) {
+		const editor = this.editor
+		const src = this._requireScreen(args.id)
+		if (!args.newId) throw new Error('duplicate_screen needs newId')
+		const newId = cleanId(args.newId)
+		if (editor.getShape(toId(newId))) throw new Error(`Id "${newId}" is already used. Pick another newId.`)
+		const srcId = bare(src.id)
+		const tree = this._toTree(src)
+		const idMap: Record<string, string> = {}
+		const remap = (n: UiTreeNode, isRoot: boolean) => {
+			const old = n.id
+			n.id = isRoot ? newId : old.startsWith(`${srcId}_`) ? `${newId}_${old.slice(srcId.length + 1)}` : `${newId}_${old}`
+			if (!isRoot) idMap[old] = n.id
+			n.children.forEach((c) => remap(c, false))
+		}
+		remap(tree, true)
+		Object.assign(idMap, this._dedupeIds(tree, newId))
+		tree.props.name = String(args.name ?? `${src.props.name} copy`)
+		const pos = nextScreenPosition(editor, src.props.w, src.props.h)
+		tree.x = pos.x
+		tree.y = pos.y
+		asAgent(() =>
+			editor.run(() => {
+				this._createTree(tree, undefined, { theme: src.meta?.theme })
+				this._relayout(editor.getShape(toId(newId)) as UiShape)
+			})
+		)
+		this._pointAt(toId(newId))
+		return { id: newId, name: tree.props.name, x: Math.round(pos.x), y: Math.round(pos.y), idMap }
+	}
+
+	set_theme(args: Args) {
+		const editor = this.editor
+		const target = args.screenId ?? args.id ?? 'all'
+		const screens =
+			target === 'all'
+				? editor.getCurrentPageShapes().filter(isScreen)
+				: [this._screenOf(this._requireUi(target)) ?? this._requireScreen(target)]
+		if (!screens.length) throw new Error('There are no screens yet. Create one with create_screen.')
+		if (args.mode !== undefined && args.mode !== 'light' && args.mode !== 'dark') throw new Error("mode must be 'light' or 'dark'")
+		if (args.primary !== undefined && !/^#[0-9a-fA-F]{3,8}$/.test(String(args.primary))) throw new Error("primary must be a hex color like '#2563eb'")
+		asAgent(() =>
+			editor.updateShapes(
+				screens.map((s) => {
+					const prev = { ...DEFAULT_THEME, ...((s.meta?.theme as object) ?? {}) }
+					return {
+						id: s.id,
+						type: 'ui',
+						meta: { ...s.meta, theme: { ...prev, ...(args.mode ? { mode: args.mode } : {}), ...(args.primary ? { primary: args.primary } : {}) } },
+					} as TLShapePartial
+				})
+			)
+		)
+		return { screens: screens.map((s) => ({ id: bare(s.id), theme: (editor.getShape(s.id)!.meta as any).theme })) }
+	}
+
+	connect_screens(args: Args) {
 		const from = this._require(args.fromId)
 		const to = this._require(args.toId)
-		const id = toId(args.id)
+		if (from.id === to.id) throw new Error('fromId and toId must differ')
+		const id = toId(args.id ?? `flow_${bare(from.id)}_${bare(to.id)}`)
+		// Leave from the side of the node facing the destination, enter the screen's near edge.
+		const fb = this.editor.getShapePageBounds(from)!
+		const tb = this.editor.getShapePageBounds(to)!
+		const rightward = tb.center.x >= fb.center.x
 		asAgent(() =>
 			this._arrow(
 				id,
 				from,
 				to,
-				{ richText: toRichText(String(args.label ?? '')), color: color(args.color, 'grey'), size: 's' },
-				agentMeta()
+				{ richText: toRichText(String(args.label ?? '')), color: 'blue', size: 's', font: 'sans' },
+				agentMeta({ role: 'flow' }),
+				{ start: { x: rightward ? 1 : 0, y: 0.5 }, end: { x: rightward ? 0 : 1, y: 0.25 } }
 			)
 		)
 		this._pointAt(to.id)
 		return { id: bare(id), fromId: bare(from.id), toId: bare(to.id) }
 	}
 
-	draw_array(args: Args) {
-		const editor = this.editor
-		const group = String(args.id ?? 'array')
-		const values: string[] = (Array.isArray(args.values) ? args.values : []).map(String)
-		if (!values.length) throw new Error('values must be a non-empty array')
-		const CELL = 64
-		const previous = editor.getCurrentPageShapes().filter((s) => s.meta?.group === group && authorOf(s)?.kind === 'agent')
-		const origin = (previous[0]?.meta?.origin as { x: number; y: number } | undefined) ??
-			findFreeSpot(editor, new Box(Number(args.startX) || 0, (Number(args.startY) || 0) - 110, values.length * CELL, CELL + 150))
-		const x0 = origin.x
-		const y0 = previous.length ? origin.y : origin.y + 110
-		const highlight = new Set<number>(Array.isArray(args.highlight) ? args.highlight : [])
-		const meta = agentMeta({ group, origin: { x: x0, y: y0 } })
-		const sid = (part: string) => createShapeId(`${group.replace(/[^a-zA-Z0-9_-]/g, '_')}_${part}`)
-
-		asAgent(() => {
-			this._deleteWithArrows(previous.map((s) => s.id))
-			editor.createShapes(
-				values.flatMap((v, i) => [
-					{
-						id: sid(`cell_${i}`),
-						type: 'geo',
-						x: x0 + i * CELL,
-						y: y0,
-						meta,
-						props: {
-							geo: 'rectangle',
-							w: CELL,
-							h: CELL,
-							richText: toRichText(v),
-							color: highlight.has(i) ? 'orange' : 'black',
-							fill: highlight.has(i) ? 'semi' : 'none',
-							size: 's',
-						},
-					},
-					{
-						id: sid(`idx_${i}`),
-						type: 'text',
-						x: x0 + i * CELL + CELL / 2 - 6,
-						y: y0 + CELL + 6,
-						meta,
-						props: { richText: toRichText(String(i)), color: 'grey', size: 's' },
-					},
-				])
-			)
-			// Group pointers that share an index into one marker ("left/right").
-			const byIndex = new Map<number, string[]>()
-			for (const p of Array.isArray(args.pointers) ? args.pointers : []) {
-				const i = Number(p?.index)
-				if (!Number.isInteger(i) || i < 0 || i >= values.length) continue
-				byIndex.set(i, [...(byIndex.get(i) ?? []), String(p.label ?? '^')])
-			}
-			const palette = ['red', 'blue', 'green', 'violet'] as const
-			let k = 0
-			for (const [i, labels] of byIndex) {
-				const cx = x0 + i * CELL + CELL / 2
-				const c = palette[k++ % palette.length]
-				editor.createShapes([
-					{
-						id: sid(`ptr_${i}_label`),
-						type: 'text',
-						x: cx - 8 * labels.join('/').length,
-						y: y0 - 100,
-						meta,
-						props: { richText: toRichText(labels.join('/')), color: c, size: 's' },
-					},
-					{
-						id: sid(`ptr_${i}_arrow`),
-						type: 'arrow',
-						x: cx,
-						y: y0 - 62,
-						meta,
-						props: { start: { x: 0, y: 0 }, end: { x: 0, y: 56 }, color: c, size: 's' },
-					},
-				])
-			}
-		})
-		this._point(x0 + (values.length * CELL) / 2, y0 - 40)
-		return { id: group, x: Math.round(x0), y: Math.round(y0), w: values.length * CELL, h: CELL, cellIds: values.map((_, i) => bare(sid(`cell_${i}`))) }
-	}
-
-	update_shape(args: Args) {
-		const editor = this.editor
-		const shape = this._require(args.id)
-		const props: Args = {}
-		if (args.label !== undefined && 'richText' in (shape.props as any)) props.richText = toRichText(String(args.label))
-		if (args.color !== undefined && 'color' in (shape.props as any)) props.color = color(args.color)
-		asAgent(() =>
-			editor.updateShape({
-				id: shape.id,
-				type: shape.type,
-				...(typeof args.x === 'number' ? { x: args.x } : {}),
-				...(typeof args.y === 'number' ? { y: args.y } : {}),
-				props,
-			})
-		)
-		this._pointAt(shape.id)
-		return this._serialize(editor.getShape(shape.id)!)
-	}
-
 	focus_view(args: Args) {
 		const editor = this.editor
 		const ids: string[] = Array.isArray(args.shapeIds) ? args.shapeIds : []
 		const bounds = unionBounds(editor, ids.map((id) => editor.getShape(toId(id))))
-		if (!bounds) throw new Error('None of those shapes exist.')
+		if (!bounds) throw new Error(`None of those shapes exist. Screens: ${this._knownIds(isScreen)}`)
 		const zoom = Number(args.zoomLevel)
 		editor.zoomToBounds(bounds, {
 			inset: 80,
@@ -344,18 +720,33 @@ export class CanvasExecutor {
 	// -------------------------------------------------------- reading tools
 
 	get_canvas_state(args: Args) {
+		const editor = this.editor
 		let shapes = this._scopeShapes(args)
 		if (args.author === 'user' || args.author === 'agent') {
 			shapes = shapes.filter((s) => (authorOf(s)?.kind ?? 'user') === args.author)
 		}
-		const all = shapes.map((s) => this._serialize(s))
+		const explicit = Array.isArray(args.shapeIds) && args.shapeIds.length > 0
+		const inScope = new Set(shapes.map((s) => s.id))
+		// Design nodes come back as nested trees: the topmost in-scope ui shapes.
+		const uiRoots = shapes.filter((s) => {
+			if (!isUi(s)) return false
+			if (explicit) return true
+			let p = editor.getShape(s.parentId as TLShapeId)
+			while (p) {
+				if (isUi(p) && inScope.has(p.id)) return false
+				p = editor.getShape(p.parentId as TLShapeId)
+			}
+			return true
+		}) as UiShape[]
+		const screens = uiRoots.map((s) => this._node(s))
+		const others = shapes.filter((s) => !isUi(s)).map((s) => this._serialize(s))
 		const limit = 200
 		return {
-			count: all.length,
-			shapes: all.slice(0, limit),
-			...(all.length > limit ? { truncated: true } : {}),
+			screens,
+			...(others.length ? { shapes: others.slice(0, limit) } : {}),
+			...(others.length > limit ? { truncated: true } : {}),
 			viewport: (() => {
-				const v = this.editor.getViewportPageBounds()
+				const v = editor.getViewportPageBounds()
 				return { x: Math.round(v.x), y: Math.round(v.y), w: Math.round(v.w), h: Math.round(v.h) }
 			})(),
 		}
@@ -364,7 +755,7 @@ export class CanvasExecutor {
 	async get_canvas_image(args: Args): Promise<ToolResult> {
 		const editor = this.editor
 		const shapes = this._scopeShapes(args)
-		if (!shapes.length) return { ok: false, error: 'There is nothing on the board in that area.' }
+		if (!shapes.length) return { ok: false, error: 'There is nothing on the canvas in that area.' }
 		const bounds = unionBounds(editor, shapes)!
 		const MAX = 1600
 		const scale = Math.min(Number(args.scale) || 1, MAX / Math.max(bounds.w + 64, bounds.h + 64, 1))
@@ -401,14 +792,14 @@ export class CanvasExecutor {
 		const editor = this.editor
 		const targets = (Array.isArray(args.shapeIds) ? args.shapeIds : []).map((id: string) => editor.getShape(toId(id)))
 		const bounds = unionBounds(editor, targets)
-		if (!bounds) throw new Error('None of those shapes exist.')
+		if (!bounds) throw new Error(`None of those shapes exist. Nodes: ${this._knownIds(isUi)}`)
 		const id = toId(args.id)
 		const style = args.style ?? 'outline'
 		const c = color(args.color, 'red')
-		const pad = style === 'circle' ? 36 : 16
+		const pad = style === 'circle' ? 24 : 8
 		const box =
 			style === 'underline'
-				? new Box(bounds.x, bounds.maxY + 8, bounds.w, 8)
+				? new Box(bounds.x, bounds.maxY + 6, bounds.w, 6)
 				: new Box(bounds.x - pad, bounds.y - pad, bounds.w + pad * 2, bounds.h + pad * 2)
 		asAgent(() => {
 			if (editor.getShape(id)) editor.deleteShapes([id])
@@ -425,10 +816,9 @@ export class CanvasExecutor {
 					color: c,
 					fill: style === 'underline' ? 'solid' : 'none',
 					dash: style === 'outline' ? 'dashed' : 'draw',
-					size: 'm',
+					size: 's',
 				},
 			})
-			editor.sendToBack([id])
 		})
 		this._point(box.maxX, box.y)
 		return { id: bare(id), highlighted: targets.filter(Boolean).length }
@@ -438,13 +828,24 @@ export class CanvasExecutor {
 		const editor = this.editor
 		const id = toId(args.id)
 		const target = args.targetShapeId ? editor.getShape(toId(args.targetShapeId)) : undefined
+		if (args.targetShapeId && !target) throw new Error(`No shape with id "${args.targetShapeId}". Nodes: ${this._knownIds(isUi)}`)
+		// Comments sit outside the screen, to the right of the node's screen.
+		const screen = target ? this._screenOf(target) : null
 		const tb = target ? editor.getShapePageBounds(target) : null
+		const sb = screen ? editor.getShapePageBounds(screen) : tb
 		const NOTE = 200
 		const center = editor.getViewportPageBounds().center
-		const rect = tb ? new Box(tb.maxX + 80, tb.y, NOTE, NOTE) : new Box(center.x - NOTE / 2, center.y - NOTE / 2, NOTE, NOTE)
+		const rect = tb && sb ? new Box(sb.maxX + 60, tb.y, NOTE, NOTE) : new Box(center.x - NOTE / 2, center.y - NOTE / 2, NOTE, NOTE)
 		const ignore = new Set<string>([id, ...(target ? [target.id] : [])])
 		const pos = findFreeSpot(editor, rect, { avoidAll: true, ignore })
-		const kindColor: Record<string, TLDefaultColorStyle> = { error: 'light-red', hint: 'yellow', praise: 'light-green', question: 'light-blue' }
+		const kindColor: Record<string, TLDefaultColorStyle> = {
+			issue: 'light-red',
+			suggestion: 'yellow',
+			praise: 'light-green',
+			question: 'light-blue',
+			error: 'light-red',
+			hint: 'yellow',
+		}
 		const text = args.addressedTo ? `@${args.addressedTo} ${args.text ?? ''}` : String(args.text ?? '')
 		const leader = createShapeId(`${bare(id)}_leader`)
 		asAgent(() => {
@@ -464,76 +865,24 @@ export class CanvasExecutor {
 		this._pointAt(id)
 		return { id: bare(id), x: Math.round(pos.x), y: Math.round(pos.y) }
 	}
-
-	suggest_correction(args: Args) {
-		const editor = this.editor
-		const entries: Args[] = Array.isArray(args.shapes) ? args.shapes : []
-		if (!entries.length) throw new Error('shapes must be a non-empty array')
-		const suggestion = { id: String(args.id ?? 'suggestion'), explanation: String(args.explanation ?? ''), forShapeIds: args.forShapeIds ?? [] }
-		const boxes = entries.filter((e) => !e.fromId).map((e) => new Box(Number(e.x) || 0, Number(e.y) || 0, Number(e.w) || 160, Number(e.h) || 80))
-		// Shift the whole suggestion (keeping its internal layout) off of student work.
-		let dx = 0
-		let dy = 0
-		if (boxes.length) {
-			const group = Box.Common(boxes)
-			// Avoid everything here, including the agent's own notes and highlights.
-			const spot = findFreeSpot(editor, group, { avoidAll: true })
-			dx = spot.x - group.x
-			dy = spot.y - group.y
-		}
-		const created: string[] = []
-		asAgent(() => {
-			for (const e of entries.filter((e) => !e.fromId)) {
-				const r = this.create_shape({ ...e, x: (Number(e.x) || 0) + dx, y: (Number(e.y) || 0) + dy })
-				created.push(r.id)
-			}
-			for (const e of entries.filter((e) => e.fromId && e.toId)) {
-				created.push(this.create_arrow({ ...e, id: e.id ?? `${suggestion.id}_${created.length}` }).id)
-			}
-			if (suggestion.explanation) {
-				const b = unionBounds(editor, created.map((id) => editor.getShape(toId(id))))
-				if (b) {
-					const label = this.create_shape({
-						id: `${suggestion.id}_label`,
-						type: 'text',
-						x: b.x,
-						y: b.maxY + 16,
-						w: Math.max(b.w, 260),
-						label: `Suggestion: ${suggestion.explanation}`,
-						color: 'violet',
-					})
-					created.push(label.id)
-				}
-			}
-			editor.updateShapes(
-				created.map((id) => {
-					const s = editor.getShape(toId(id))!
-					return {
-						id: s.id,
-						type: s.type,
-						opacity: 0.55,
-						meta: { ...s.meta, suggestion },
-						...('dash' in (s.props as any) ? { props: { dash: 'dashed' } } : {}),
-					} as TLShapePartial
-				})
-			)
-		})
-		return { id: suggestion.id, shapeIds: created, offset: { dx, dy } }
-	}
 }
 
 /**
  * Client-side version of the server's guard, for live voice mode (whose tool
  * calls don't pass through the server): returns a permission prompt when a
- * call would change or erase a student's shapes.
+ * call would change or erase a user's shapes.
  */
 export function studentWorkPrompt(editor: Editor, name: string, args: Args): string | null {
 	const student = (ids: string[]) =>
 		ids.map((id) => editor.getShape(toId(id))).filter((s): s is TLShape => !!s && authorOf(s)?.kind !== 'agent')
 	let touched: TLShape[] = []
 	let verb = 'change'
-	if (name === 'update_shape' || name === 'create_shape') touched = student([String(args.id ?? '')])
-	else if (name === 'clear_canvas' && args.mode !== 'agent_only') {
+	if (['update_node', 'move_node', 'create_screen'].includes(name)) touched = student([String(args.id ?? '')])
+	else if (name === 'set_theme' && args.screenId && args.screenId !== 'all') touched = student([String(args.screenId)])
+	else if (name === 'delete_nodes') {
+		verb = 'delete'
+		touched = student(Array.isArray(args.ids) ? args.ids.map(String) : [])
+	} else if (name === 'clear_canvas' && args.mode !== 'agent_only') {
 		verb = 'erase'
 		touched = Array.isArray(args.ids) && args.ids.length
 			? student(args.ids.map(String))
@@ -542,23 +891,23 @@ export function studentWorkPrompt(editor: Editor, name: string, args: Args): str
 				: editor.getCurrentPageShapes().filter((s) => authorOf(s)?.kind !== 'agent')
 	}
 	if (!touched.length) return null
-	const owners = [...new Set(touched.map((s) => authorOf(s)?.name ?? 'a student'))].join(', ')
-	return `Professor Grok wants to ${verb} ${touched.length} shape(s) drawn by ${owners}. Allow?`
+	const owners = [...new Set(touched.map((s) => authorOf(s)?.name ?? 'a user'))].join(', ')
+	return `${AGENT_NAME} wants to ${verb} ${touched.length} element(s) made by ${owners}. Allow?`
 }
 
-/** Accept a suggestion: make it solid and hand ownership to the student who accepted it. */
+// Suggestions (dashed overlays) belonged to the whiteboard tutor; the design
+// tool edits directly. These stay so the panel's (now empty) suggestion list compiles.
+
+/** Accept a suggestion: make it solid and hand ownership to the user who accepted it. */
 export function acceptSuggestion(editor: Editor, suggestionId: string, author: Author) {
 	const shapes = editor.getCurrentPageShapes().filter((s) => (s.meta?.suggestion as any)?.id === suggestionId)
-	const label = shapes.filter((s) => s.id.endsWith('_label'))
+	if (!shapes.length) return
 	editor.run(() => {
-		editor.deleteShapes(label.map((s) => s.id))
 		editor.updateShapes(
-			shapes
-				.filter((s) => !label.includes(s))
-				.map((s) => {
-					const { suggestion: _drop, ...meta } = s.meta as Args
-					return { id: s.id, type: s.type, opacity: 1, meta: { ...meta, author }, ...('dash' in (s.props as any) ? { props: { dash: 'draw' } } : {}) } as TLShapePartial
-				})
+			shapes.map((s) => {
+				const { suggestion: _drop, ...meta } = s.meta as Args
+				return { id: s.id, type: s.type, opacity: 1, meta: { ...meta, author } } as TLShapePartial
+			})
 		)
 	})
 }
@@ -568,5 +917,5 @@ export function dismissSuggestion(editor: Editor, suggestionId: string) {
 		.getCurrentPageShapes()
 		.filter((s) => (s.meta?.suggestion as any)?.id === suggestionId)
 		.map((s) => s.id)
-	editor.deleteShapes(ids)
+	if (ids.length) editor.deleteShapes(ids)
 }

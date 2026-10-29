@@ -52,3 +52,22 @@ export function unionBounds(editor: Editor, shapes: (TLShape | undefined)[]): Bo
 	const boxes = shapes.flatMap((s) => (s ? [editor.getShapePageBounds(s)] : [])).filter((b): b is Box => !!b)
 	return boxes.length ? Box.Common(boxes) : null
 }
+
+/**
+ * Where a new screen goes: to the right of the existing screens (80px gap,
+ * top-aligned with them, like a row of Figma artboards). On a canvas without
+ * screens it goes into the viewport, clear of other shapes.
+ */
+export function nextScreenPosition(editor: Editor, w: number, h: number): { x: number; y: number } {
+	const screens = editor
+		.getCurrentPageShapes()
+		.filter((s) => s.type === 'ui' && (s.props as { kind?: string }).kind === 'screen' && s.parentId === editor.getCurrentPageId())
+	if (screens.length) {
+		const b = unionBounds(editor, screens)!
+		return { x: b.maxX + 80, y: Math.min(...screens.map((s) => s.y)) }
+	}
+	if (!editor.getCurrentPageShapes().length) return { x: 0, y: 0 }
+	const v = editor.getViewportPageBounds()
+	const spot = findFreeSpot(editor, new Box(v.x + 80, v.y + 80, w, h), { avoidAll: true })
+	return { x: spot.x, y: spot.y }
+}
