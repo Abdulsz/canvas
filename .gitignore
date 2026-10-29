@@ -4,3 +4,4 @@ server/data
 *.log
 .env
 __pycache__/
+.claude/worktrees/
