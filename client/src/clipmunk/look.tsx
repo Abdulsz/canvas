@@ -13,6 +13,9 @@ export const FONT = "'Inter Variable', Inter, ui-sans-serif, system-ui, sans-ser
 export const INK = '#f5f5f7'
 export const INK_2 = 'rgba(245, 245, 247, 0.62)'
 
+/** The demo video's end-card note under the GitHub URL (rendered only when non-empty). */
+export const END_NOTE = 'Demo for my Figma intern application'
+
 /** The app is shown at a smaller viewport and scaled up to fill the frame. */
 export const APP_W = 1280
 export const APP_H = 660
@@ -99,13 +102,14 @@ export function Caption({ text, keys, start }: { text: string; keys: string[]; s
 }
 
 /** Three dots and the page's URL in a title bar, then the page. No shadows. */
-export function BrowserWindow({ url, children }: { url: string; children: ReactNode }) {
+export function BrowserWindow({ url, children, appH = APP_H, top = WIN_TOP }: { url: string; children: ReactNode; appH?: number; top?: number }) {
+	const winH = appH + BAR_H
 	return (
-		<Surface id="window" style={{ position: 'absolute', left: WIN_LEFT, top: WIN_TOP, width: WIN_W, height: WIN_H }}>
+		<Surface id="window" style={{ position: 'absolute', left: WIN_LEFT, top, width: WIN_W, height: winH }}>
 			<div
 				style={{
 					width: WIN_W,
-					height: WIN_H,
+					height: winH,
 					borderRadius: 14,
 					overflow: 'hidden',
 					background: '#1c1c1f',
@@ -139,7 +143,7 @@ export function BrowserWindow({ url, children }: { url: string; children: ReactN
 					</div>
 				</div>
 				{/* contain: paint keeps the app's fixed overlays (the code modal) inside the page area. */}
-				<div style={{ position: 'relative', width: APP_W, height: APP_H, overflow: 'hidden', isolation: 'isolate', contain: 'paint' }}>{children}</div>
+				<div style={{ position: 'relative', width: APP_W, height: appH, overflow: 'hidden', isolation: 'isolate', contain: 'paint' }}>{children}</div>
 			</div>
 		</Surface>
 	)

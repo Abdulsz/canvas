@@ -9,13 +9,14 @@
 import { getAssetUrlsByImport } from '@tldraw/assets/imports.vite'
 import { useSceneTime } from 'clipmunk'
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Box, DEFAULT_THEME, Tldraw, type Editor, type TLComponents, type TLShapeId, type TLThemes } from 'tldraw'
+import { Box, DEFAULT_THEME, Tldraw, useValue, type Editor, type TLComponents, type TLShapeId, type TLThemes } from 'tldraw'
 import { registerAuthorship } from '../agent/authorship.ts'
 import { CanvasExecutor } from '../agent/executor.ts'
 import type { AgentState, LogEntry } from '../agent/useAgent.ts'
 import type { Voice } from '../agent/useVoice.ts'
 import { AgentPanel, Orb } from '../components/AgentPanel.tsx'
 import { customShapeUtils } from '../design/shapes.ts'
+import type { BuildProgress } from '../Board.tsx'
 import type { Identity } from '../identity.ts'
 import { CodeModal } from '../shell/CodeModal.tsx'
 import { DesignPanel } from '../shell/DesignPanel.tsx'
@@ -80,9 +81,13 @@ type Props = {
 	tab?: 'design' | 'agent'
 	/** Opens the real Copy code modal for this screen while it returns an id. */
 	code?: (t: number) => string | null
+	/** The local user (defaults to ME). */
+	me?: Identity
+	/** The voice dock's build progress, read from the canvas (re-evaluated when the store changes). */
+	build?: (editor: Editor, t: number) => BuildProgress | null
 }
 
-export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }: Props) {
+export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code, me = ME, build }: Props) {
 	const t = useSceneTime()
 	const [editor, setEditor] = useState<Editor | null>(null)
 	const exec = useMemo(() => (editor ? new CanvasExecutor(editor, { asUser: true }) : null), [editor])
@@ -101,12 +106,13 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 		voice: 'grok',
 		realtime: false,
 		audioBlocked: false,
-		participants: [ME, MAYA],
+		participants: [me, MAYA],
 		log: (shot.log ?? []).map((e, i) => ({ ...e, id: i + 1 })),
 		agentCursor: null,
 		pendingConfirm: null,
 	}
 	const voice = fakeVoice(state, shot.listen)
+	const buildNow = useValue('demo build progress', () => (editor && build ? build(editor, t) : null), [editor, build, t])
 
 	// The canvas lives inside a 3D-transformed Surface, so tldraw's own
 	// getBoundingClientRect measurement is scaled. Keep its viewport at the
@@ -140,7 +146,7 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 
 	return (
 		<div ref={root} className="flex h-full flex-col bg-[var(--bg)] text-[var(--label)]" style={{ width: '100%', height: '100%' }}>
-			<TopBar roomId="coffee-app" me={ME} participants={state.participants} editor={editor} exec={exec} onOpenCode={noop} onToggleLayers={noop} layersOpen={false} />
+			<TopBar roomId="coffee-app" me={me} participants={state.participants} editor={editor} exec={exec} onOpenCode={noop} onToggleLayers={noop} layersOpen={false} />
 			<div className="relative flex min-h-0 flex-1 flex-col gap-2 md:flex-row md:px-2 md:pb-2">
 				<div className="hidden absolute bottom-0 left-0 top-0 z-[700] w-[min(300px,86vw)] pb-[max(8px,env(safe-area-inset-bottom))] pl-2 md:static md:z-auto md:flex md:w-[232px] md:shrink-0 md:p-0 md:[animation:none] lg:w-[248px]">
 					<LayersPanel editor={editor} exec={exec} />
@@ -154,7 +160,7 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 						components={components}
 						onMount={(e) => {
 							e.user.updateUserPreferences({ colorScheme: 'system' })
-							const off = registerAuthorship(e, ME)
+							const off = registerAuthorship(e, me)
 							syncViewport(e)
 							setup?.({ editor: e, exec: new CanvasExecutor(e) })
 							setEditor(e)
@@ -162,7 +168,7 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 						}}
 					/>
 					<EmptyCanvas editor={editor} exec={exec} voice={voice} connected busy={state.busy} />
-					<VoiceDock state={state} voice={voice} build={null} onOpenAgent={noop} onStop={noop} />
+					<VoiceDock state={state} voice={voice} build={buildNow} onOpenAgent={noop} onStop={noop} />
 				</div>
 				<aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-t-[20px] bg-[var(--material-thick)] text-[var(--label)] shadow-[var(--shadow-panel)] backdrop-blur-[24px] md:h-full md:w-[300px] md:rounded-[16px] lg:w-[320px]" data-testid="side-panel">
 					<div className="hairline-b flex h-[52px] shrink-0 items-center gap-1 px-2 md:h-11" role="tablist" aria-label="Panels">
@@ -190,7 +196,7 @@ export function GrokDesign({ setup, drive, agent, typing, tab = 'agent', code }:
 						<DesignPanel editor={editor} exec={exec} onOpenCode={noop} />
 					</div>
 					<div className={`${tab === 'agent' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col`} role="tabpanel" aria-label="Agent">
-						<AgentPanel me={ME} editor={editor} state={state} actions={fakeActions} voice={voice} />
+						<AgentPanel me={me} editor={editor} state={state} actions={fakeActions} voice={voice} />
 					</div>
 				</aside>
 			</div>

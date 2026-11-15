@@ -1,0 +1,1107 @@
+{
+ "about": "One live Grok Design conversation (4 requests + Critique), recorded from the /agent WebSocket by driving the real app with Playwright against the real xAI Grok backend. Times are ms from sending each request (typed into the same user_message path voice transcripts use). voiceStart/voiceEnd: when Grok TTS audio for that line played in the browser. Best of 3 runs (run 3: the only one where a screen streamed in as create_screen + add_nodes).",
+ "capturedAt": "2026-11-14T22:59:46.007Z",
+ "server": {
+  "ok": true,
+  "provider": "xai:grok-4.7",
+  "voice": "grok:ara",
+  "realtime": true
+ },
+ "user": {
+  "userId": "alice",
+  "name": "Alice",
+  "color": "#ff375f"
+ },
+ "otherRuns": {
+  "run1": [
+   {
+    "request": "Design a login screen for a coffee shop app",
+    "firstCreateScreen": 9221,
+    "firstCanvasChange": 124,
+    "turnDone": 16289
+   },
+   {
+    "request": "Make the sign in button brown",
+    "firstCreateScreen": null,
+    "firstCanvasChange": 1113,
+    "turnDone": 9922
+   },
+   {
+    "request": "Add a menu screen and connect sign in to it",
+    "firstCreateScreen": 9316,
+    "firstCanvasChange": 62,
+    "turnDone": 15081
+   },
+   {
+    "request": "Switch everything to dark mode",
+    "firstCreateScreen": null,
+    "firstCanvasChange": 1224,
+    "turnDone": 9407
+   },
+   {
+    "request": "Critique",
+    "firstCreateScreen": null,
+    "firstCanvasChange": 6864,
+    "turnDone": 23107
+   }
+  ],
+  "run2": [
+   {
+    "request": "Design a login screen for a coffee shop app",
+    "firstCreateScreen": 10637,
+    "firstCanvasChange": 109,
+    "turnDone": 15676
+   },
+   {
+    "request": "Make the sign in button brown",
+    "firstCreateScreen": null,
+    "firstCanvasChange": 1273,
+    "turnDone": 8903
+   },
+   {
+    "request": "Add a menu screen and connect sign in to it",
+    "firstCreateScreen": 10575,
+    "firstCanvasChange": 76,
+    "turnDone": 15677
+   },
+   {
+    "request": "Switch everything to dark mode",
+    "firstCreateScreen": null,
+    "firstCanvasChange": 1534,
+    "turnDone": 8912
+   },
+   {
+    "request": "Critique",
+    "firstCreateScreen": null,
+    "firstCanvasChange": 6649,
+    "turnDone": 19541
+   }
+  ]
+ },
+ "turns": [
+  {
+   "request": "Design a login screen for a coffee shop app",
+   "latencyMs": {
+    "ackVoice": 143,
+    "grokVoice": 1954,
+    "firstCanvasChange": 92,
+    "firstCreateScreen": 16546,
+    "turnDone": 23271
+   },
+   "events": [
+    {
+     "t": 43,
+     "kind": "say",
+     "text": "Okay, let me sketch that.",
+     "ephemeral": true,
+     "voiceStart": 143,
+     "voiceEnd": 1863
+    },
+    {
+     "t": 43,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 92,
+     "kind": "call",
+     "name": "create_skeleton",
+     "args": {
+      "kind": "login",
+      "device": "iphone",
+      "name": "Log in"
+     }
+    },
+    {
+     "t": 93,
+     "kind": "status",
+     "busy": true,
+     "activity": "Looking at the board\u2026"
+    },
+    {
+     "t": 93,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 1876,
+     "kind": "say",
+     "text": "Okay, a login screen for the coffee shop app, coming up.",
+     "ephemeral": false,
+     "voiceStart": 1954,
+     "voiceEnd": 5561
+    },
+    {
+     "t": 16495,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running create_screen\u2026"
+    },
+    {
+     "t": 16546,
+     "kind": "call",
+     "name": "create_screen",
+     "args": {
+      "id": "login",
+      "name": "Login",
+      "device": "iphone",
+      "primary": "#6B4423",
+      "padding": [
+       64,
+       24,
+       40,
+       24
+      ],
+      "children": [
+       {
+        "id": "login_content",
+        "type": "frame",
+        "height": "fill",
+        "justify": "center",
+        "gap": 32,
+        "children": [
+         {
+          "id": "login_brand",
+          "type": "frame",
+          "alignItems": "center",
+          "gap": 16,
+          "children": [
+           {
+            "id": "login_mark",
+            "type": "icon",
+            "icon": "coffee",
+            "width": 56,
+            "height": 56,
+            "fill": "$primary",
+            "textColor": "$onPrimary",
+            "radius": 16
+           },
+           {
+            "id": "login_titles",
+            "type": "frame",
+            "alignItems": "center",
+            "gap": 8,
+            "children": [
+             {
+              "id": "login_title",
+              "type": "text",
+              "text": "Welcome back",
+              "fontSize": 30,
+              "fontWeight": 700,
+              "align": "center"
+             },
+             {
+              "id": "login_caption",
+              "type": "text",
+              "text": "Sign in to order ahead at Hearth.",
+              "fontSize": 16,
+              "textColor": "$muted",
+              "align": "center"
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "login_form",
+          "type": "frame",
+          "gap": 16,
+          "children": [
+           {
+            "id": "login_email_group",
+            "type": "frame",
+            "gap": 8,
+            "children": [
+             {
+              "id": "login_email_label",
+              "type": "text",
+              "text": "Email",
+              "fontSize": 14,
+              "fontWeight": 500
+             },
+             {
+              "id": "login_email",
+              "type": "input",
+              "icon": "mail",
+              "text": "maya@hearth.coffee"
+             }
+            ]
+           },
+           {
+            "id": "login_pass_group",
+            "type": "frame",
+            "gap": 8,
+            "children": [
+             {
+              "id": "login_pass_label",
+              "type": "text",
+              "text": "Password",
+              "fontSize": 14,
+              "fontWeight": 500
+             },
+             {
+              "id": "login_pass",
+              "type": "input",
+              "icon": "lock",
+              "trailingIcon": "eye",
+              "text": "Your password"
+             }
+            ]
+           },
+           {
+            "id": "login_row",
+            "type": "frame",
+            "layout": "horizontal",
+            "justify": "space-between",
+            "alignItems": "center",
+            "children": [
+             {
+              "id": "login_remember",
+              "type": "checkbox",
+              "text": "Remember me",
+              "checked": true
+             },
+             {
+              "id": "login_forgot",
+              "type": "button",
+              "text": "Forgot password?",
+              "fill": "transparent",
+              "textColor": "$primary",
+              "fontSize": 14,
+              "fontWeight": 600,
+              "height": 44
+             }
+            ]
+           }
+          ]
+         },
+         {
+          "id": "login_submit",
+          "type": "button",
+          "text": "Log in",
+          "width": "fill",
+          "height": 52
+         },
+         {
+          "id": "login_or",
+          "type": "frame",
+          "layout": "horizontal",
+          "alignItems": "center",
+          "gap": 12,
+          "children": [
+           {
+            "id": "login_or_left",
+            "type": "divider",
+            "width": "fill"
+           },
+           {
+            "id": "login_or_text",
+            "type": "text",
+            "text": "or continue with",
+            "fontSize": 13,
+            "textColor": "$muted",
+            "width": "hug"
+           },
+           {
+            "id": "login_or_right",
+            "type": "divider",
+            "width": "fill"
+           }
+          ]
+         },
+         {
+          "id": "login_social",
+          "type": "frame",
+          "layout": "horizontal",
+          "gap": 12,
+          "children": [
+           {
+            "id": "login_google",
+            "type": "button",
+            "text": "Google",
+            "icon": "google",
+            "width": "fill",
+            "fill": "$surface",
+            "textColor": "$text",
+            "stroke": "$border"
+           },
+           {
+            "id": "login_apple",
+            "type": "button",
+            "text": "Apple",
+            "icon": "apple",
+            "width": "fill",
+            "fill": "$surface",
+            "textColor": "$text",
+            "stroke": "$border"
+           }
+          ]
+         },
+         {
+          "id": "login_signup",
+          "type": "frame",
+          "layout": "horizontal",
+          "justify": "center",
+          "gap": 6,
+          "children": [
+           {
+            "id": "login_new",
+            "type": "text",
+            "text": "New here?",
+            "fontSize": 14,
+            "textColor": "$muted",
+            "width": "hug"
+           },
+           {
+            "id": "login_create",
+            "type": "text",
+            "text": "Create account",
+            "fontSize": 14,
+            "fontWeight": 600,
+            "textColor": "$primary",
+            "width": "hug"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "t": 16605,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running focus_view\u2026"
+    },
+    {
+     "t": 16614,
+     "kind": "call",
+     "name": "focus_view",
+     "args": {
+      "shapeIds": [
+       "login"
+      ]
+     }
+    },
+    {
+     "t": 16627,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 17896,
+     "kind": "say",
+     "text": "Want a sign-up screen, linked from Create account?",
+     "ephemeral": false,
+     "voiceStart": 18486,
+     "voiceEnd": 21474
+    },
+    {
+     "t": 21484,
+     "kind": "call",
+     "name": "remove_skeleton",
+     "args": {}
+    },
+    {
+     "t": 21484,
+     "kind": "status",
+     "busy": false,
+     "activity": ""
+    }
+   ]
+  },
+  {
+   "request": "Make the sign in button brown",
+   "latencyMs": {
+    "ackVoice": 70,
+    "grokVoice": 1509,
+    "firstCanvasChange": 1088,
+    "firstCreateScreen": null,
+    "turnDone": 9408
+   },
+   "events": [
+    {
+     "t": 38,
+     "kind": "say",
+     "text": "Sure.",
+     "ephemeral": true,
+     "voiceStart": 70,
+     "voiceEnd": 821
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Looking at the board\u2026"
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 830,
+     "kind": "say",
+     "text": "Okay, changing the sign in button to brown, coming up.",
+     "ephemeral": false,
+     "voiceStart": 1509,
+     "voiceEnd": 5139
+    },
+    {
+     "t": 1076,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running update_node\u2026"
+    },
+    {
+     "t": 1088,
+     "kind": "call",
+     "name": "update_node",
+     "args": {
+      "id": "login_submit",
+      "fill": "#6B4423"
+     }
+    },
+    {
+     "t": 1093,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 5298,
+     "kind": "say",
+     "text": "Want an error state for the login form?",
+     "ephemeral": false,
+     "voiceStart": 5318,
+     "voiceEnd": 7687
+    },
+    {
+     "t": 7693,
+     "kind": "status",
+     "busy": false,
+     "activity": ""
+    }
+   ]
+  },
+  {
+   "request": "Add a menu screen and connect sign in to it",
+   "latencyMs": {
+    "ackVoice": 158,
+    "grokVoice": 2011,
+    "firstCanvasChange": 62,
+    "firstCreateScreen": 9745,
+    "turnDone": 19602
+   },
+   "events": [
+    {
+     "t": 38,
+     "kind": "say",
+     "text": "Okay, let me sketch that.",
+     "ephemeral": true,
+     "voiceStart": 158,
+     "voiceEnd": 1907
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 62,
+     "kind": "call",
+     "name": "create_skeleton",
+     "args": {
+      "kind": "login",
+      "device": "iphone",
+      "name": "Log in"
+     }
+    },
+    {
+     "t": 62,
+     "kind": "status",
+     "busy": true,
+     "activity": "Looking at the board\u2026"
+    },
+    {
+     "t": 63,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 1917,
+     "kind": "say",
+     "text": "Okay, adding a menu screen connected from sign in.",
+     "ephemeral": false,
+     "voiceStart": 2011,
+     "voiceEnd": 5288
+    },
+    {
+     "t": 9720,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running create_screen\u2026"
+    },
+    {
+     "t": 9745,
+     "kind": "call",
+     "name": "create_screen",
+     "args": {
+      "id": "menu",
+      "name": "Menu",
+      "device": "iphone",
+      "primary": "#6B4423",
+      "padding": [
+       56,
+       24,
+       24,
+       24
+      ],
+      "gap": 20,
+      "tabs": [
+       {
+        "icon": "home",
+        "label": "Home"
+       },
+       {
+        "icon": "grid",
+        "label": "Menu"
+       },
+       {
+        "icon": "receipt",
+        "label": "Orders"
+       },
+       {
+        "icon": "user",
+        "label": "Profile"
+       }
+      ],
+      "activeTab": 1,
+      "children": [
+       {
+        "id": "menu_head",
+        "type": "frame",
+        "gap": 4,
+        "children": [
+         {
+          "id": "menu_title",
+          "type": "text",
+          "text": "Menu",
+          "fontSize": 28,
+          "fontWeight": 700
+         },
+         {
+          "id": "menu_loc",
+          "type": "frame",
+          "layout": "horizontal",
+          "gap": 6,
+          "alignItems": "center",
+          "children": [
+           {
+            "id": "menu_pin",
+            "type": "icon",
+            "icon": "map-pin",
+            "width": 16,
+            "height": 16,
+            "textColor": "$muted"
+           },
+           {
+            "id": "menu_shop",
+            "type": "text",
+            "text": "Hearth \u00b7 Hayes Valley",
+            "fontSize": 14,
+            "textColor": "$muted"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "id": "menu_search",
+        "type": "input",
+        "icon": "search",
+        "text": "Search drinks",
+        "height": 44
+       },
+       {
+        "id": "menu_cats",
+        "type": "frame",
+        "layout": "horizontal",
+        "gap": 8,
+        "template": {
+         "id": "menu_cat",
+         "type": "badge",
+         "text": "{label}",
+         "fill": "{bg}",
+         "textColor": "{fg}"
+        },
+        "items": [
+         {
+          "label": "Espresso",
+          "bg": "$primary",
+          "fg": "$onPrimary"
+         },
+         {
+          "label": "Brew",
+          "bg": "$surfaceAlt",
+          "fg": "$text"
+         },
+         {
+          "label": "Cold",
+          "bg": "$surfaceAlt",
+          "fg": "$text"
+         },
+         {
+          "label": "Food",
+          "bg": "$surfaceAlt",
+          "fg": "$text"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "t": 13668,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running add_nodes\u2026"
+    },
+    {
+     "t": 13710,
+     "kind": "call",
+     "name": "add_nodes",
+     "args": {
+      "parentId": "menu",
+      "nodes": [
+       {
+        "id": "menu_list",
+        "type": "frame",
+        "fill": "$surface",
+        "stroke": "$border",
+        "radius": 16,
+        "padding": [
+         4,
+         16
+        ],
+        "gap": 0,
+        "dividers": true,
+        "template": {
+         "id": "menu_row",
+         "type": "frame",
+         "layout": "horizontal",
+         "gap": 12,
+         "padding": [
+          12,
+          0
+         ],
+         "alignItems": "center",
+         "children": [
+          {
+           "id": "menu_tile",
+           "type": "icon",
+           "icon": "{icon}",
+           "width": 44,
+           "height": 44,
+           "fill": "$primarySoft",
+           "textColor": "$primary",
+           "radius": 12
+          },
+          {
+           "id": "menu_txt",
+           "type": "frame",
+           "gap": 2,
+           "width": "fill",
+           "children": [
+            {
+             "id": "menu_name",
+             "type": "text",
+             "text": "{name}",
+             "fontSize": 15,
+             "fontWeight": 600
+            },
+            {
+             "id": "menu_sub",
+             "type": "text",
+             "text": "{sub}",
+             "fontSize": 13,
+             "textColor": "$muted"
+            }
+           ]
+          },
+          {
+           "id": "menu_price",
+           "type": "text",
+           "text": "{price}",
+           "fontSize": 15,
+           "fontWeight": 600
+          }
+         ]
+        },
+        "items": [
+         {
+          "icon": "coffee",
+          "name": "Cortado",
+          "sub": "Equal espresso and milk",
+          "price": "$4.25"
+         },
+         {
+          "icon": "coffee",
+          "name": "Oat latte",
+          "sub": "Two shots, steamed oat",
+          "price": "$5.50"
+         },
+         {
+          "icon": "zap",
+          "name": "Cold brew",
+          "sub": "18-hour steep, over ice",
+          "price": "$4.75"
+         },
+         {
+          "icon": "sparkle",
+          "name": "Maple mocha",
+          "sub": "Dark chocolate, maple",
+          "price": "$6.00"
+         },
+         {
+          "icon": "heart",
+          "name": "Honey cappuccino",
+          "sub": "House honey, dry foam",
+          "price": "$5.25"
+         }
+        ]
+       }
+      ]
+     }
+    },
+    {
+     "t": 14097,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running connect_screens\u2026"
+    },
+    {
+     "t": 14128,
+     "kind": "call",
+     "name": "connect_screens",
+     "args": {
+      "id": "login_to_menu",
+      "fromId": "login_submit",
+      "toId": "menu",
+      "label": "On tap"
+     }
+    },
+    {
+     "t": 14134,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running focus_view\u2026"
+    },
+    {
+     "t": 14141,
+     "kind": "call",
+     "name": "focus_view",
+     "args": {
+      "shapeIds": [
+       "menu"
+      ]
+     }
+    },
+    {
+     "t": 14314,
+     "kind": "say",
+     "text": "Want a drink detail screen, linked from a menu item?",
+     "ephemeral": false,
+     "voiceStart": 14365,
+     "voiceEnd": 17643
+    },
+    {
+     "t": 17660,
+     "kind": "call",
+     "name": "remove_skeleton",
+     "args": {}
+    },
+    {
+     "t": 17661,
+     "kind": "status",
+     "busy": false,
+     "activity": ""
+    }
+   ]
+  },
+  {
+   "request": "Switch everything to dark mode",
+   "latencyMs": {
+    "ackVoice": 72,
+    "grokVoice": 1661,
+    "firstCanvasChange": 1170,
+    "firstCreateScreen": null,
+    "turnDone": 8418
+   },
+   "events": [
+    {
+     "t": 38,
+     "kind": "say",
+     "text": "Got it.",
+     "ephemeral": true,
+     "voiceStart": 72,
+     "voiceEnd": 823
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Looking at the board\u2026"
+    },
+    {
+     "t": 38,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 830,
+     "kind": "say",
+     "text": "Sure, switching everything to dark mode.",
+     "ephemeral": false,
+     "voiceStart": 1661,
+     "voiceEnd": 4334
+    },
+    {
+     "t": 1151,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running set_theme\u2026"
+    },
+    {
+     "t": 1170,
+     "kind": "call",
+     "name": "set_theme",
+     "args": {
+      "screenId": "all",
+      "mode": "dark"
+     }
+    },
+    {
+     "t": 1174,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 4487,
+     "kind": "say",
+     "text": "Want a loading state for the menu list?",
+     "ephemeral": false,
+     "voiceStart": 4504,
+     "voiceEnd": 6832
+    },
+    {
+     "t": 6850,
+     "kind": "status",
+     "busy": false,
+     "activity": ""
+    }
+   ]
+  },
+  {
+   "request": "Critique",
+   "latencyMs": {
+    "ackVoice": 115,
+    "grokVoice": 10371,
+    "firstCanvasChange": 10025,
+    "firstCreateScreen": null,
+    "turnDone": 22606
+   },
+   "events": [
+    {
+     "t": 74,
+     "kind": "say",
+     "text": "Let me critique that.",
+     "ephemeral": true,
+     "voiceStart": 115,
+     "voiceEnd": 1522
+    },
+    {
+     "t": 74,
+     "kind": "status",
+     "busy": true,
+     "activity": "Looking at the board\u2026"
+    },
+    {
+     "t": 75,
+     "kind": "call",
+     "name": "get_canvas_state",
+     "args": {
+      "audit": true
+     }
+    },
+    {
+     "t": 92,
+     "kind": "status",
+     "busy": true,
+     "activity": "Thinking\u2026"
+    },
+    {
+     "t": 9562,
+     "kind": "say",
+     "text": "The login reads cleanly, with a clear brand mark and a complete form.",
+     "ephemeral": false,
+     "voiceStart": 10371,
+     "voiceEnd": 14617
+    },
+    {
+     "t": 9682,
+     "kind": "say",
+     "text": "The menu list stops short and never lets you add a drink.",
+     "ephemeral": false,
+     "voiceStart": 14635,
+     "voiceEnd": 17662
+    },
+    {
+     "t": 9991,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running highlight_shapes\u2026"
+    },
+    {
+     "t": 10025,
+     "kind": "call",
+     "name": "highlight_shapes",
+     "args": {
+      "id": "crit_login",
+      "shapeIds": [
+       "login_brand",
+       "login_submit"
+      ],
+      "color": "green"
+     }
+    },
+    {
+     "t": 10295,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running highlight_shapes\u2026"
+    },
+    {
+     "t": 10307,
+     "kind": "call",
+     "name": "highlight_shapes",
+     "args": {
+      "id": "crit_menu",
+      "shapeIds": [
+       "menu_list",
+       "menu_cats"
+      ],
+      "color": "orange"
+     }
+    },
+    {
+     "t": 10936,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running add_comment\u2026"
+    },
+    {
+     "t": 10953,
+     "kind": "call",
+     "name": "add_comment",
+     "args": {
+      "id": "c_login_praise",
+      "targetShapeId": "login_brand",
+      "kind": "praise",
+      "text": "The coffee mark and Welcome back title give Login a clear focal point before the form.",
+      "addressedTo": "Alice"
+     }
+    },
+    {
+     "t": 11563,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running add_comment\u2026"
+    },
+    {
+     "t": 11573,
+     "kind": "call",
+     "name": "add_comment",
+     "args": {
+      "id": "c_login_create",
+      "targetShapeId": "login_signup",
+      "kind": "suggestion",
+      "text": "Create account is plain text, so it doesn\u2019t read as tappable the way Forgot password does.",
+      "addressedTo": "Alice"
+     }
+    },
+    {
+     "t": 12194,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running add_comment\u2026"
+    },
+    {
+     "t": 12225,
+     "kind": "call",
+     "name": "add_comment",
+     "args": {
+      "id": "c_menu_add",
+      "targetShapeId": "menu_list",
+      "kind": "issue",
+      "text": "Drink rows show a price but no add control, so the menu doesn\u2019t start an order.",
+      "addressedTo": "Alice"
+     }
+    },
+    {
+     "t": 12509,
+     "kind": "status",
+     "busy": true,
+     "activity": "Running add_comment\u2026"
+    },
+    {
+     "t": 12527,
+     "kind": "call",
+     "name": "add_comment",
+     "args": {
+      "id": "c_menu_food",
+      "targetShapeId": "menu_cats",
+      "kind": "suggestion",
+      "text": "Food is a category, but every row is a drink, so that filter has nothing to show.",
+      "addressedTo": "Alice"
+     }
+    },
+    {
+     "t": 12533,
+     "kind": "say",
+     "text": "Want me to add an add button on each row and fill that gap?",
+     "ephemeral": false,
+     "voiceStart": 17678,
+     "voiceEnd": 20970
+    },
+    {
+     "t": 20978,
+     "kind": "status",
+     "busy": false,
+     "activity": ""
+    }
+   ]
+  }
+ ]
+}

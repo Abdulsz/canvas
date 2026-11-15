@@ -1,0 +1,110 @@
+{
+  "version": 1,
+  "id": "demo",
+  "title": "Grok Design product demo",
+  "width": 1920,
+  "height": 1080,
+  "fps": 60,
+  "items": [
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-hook"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-problem"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-login"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-brown"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-menu"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-dark"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-tools"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-code"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-critique"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-stack"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    },
+    {
+      "clip": {
+        "kind": "scene",
+        "id": "demo-end"
+      },
+      "transition": {
+        "kind": "cut"
+      }
+    }
+  ],
+  "music": {
+    "style": "lofi",
+    "gain": 0.25
+  }
+}
