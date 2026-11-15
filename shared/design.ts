@@ -1135,7 +1135,7 @@ export function treeToHtml(tree: UiTreeNode, theme: Partial<ThemeSpec> = tree.me
 :root { ${vars} }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #e9eaee; font-family: Inter, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; }
-button { border: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; }
+button { border: 0; background: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-family: inherit; }
 label { display: flex; align-items: center; gap: 10px; }
 input[role="switch"] { appearance: none; position: relative; border-radius: 999px; background: var(--surfaceAlt); box-shadow: inset 0 0 0 1px var(--border); margin: 0; }
 input[role="switch"]:checked { background: var(--primary); box-shadow: none; }

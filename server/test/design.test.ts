@@ -211,6 +211,33 @@ test('treeToHtml emits a standalone flexbox document', () => {
 	assert.match(html, /--primary: #5b5bd6/)
 })
 
+test('treeToHtml: transparent-fill buttons get no user-agent background, filled ones keep theirs', () => {
+	const tree = layoutUiTree(
+		specToTree(
+			{
+				id: 'login',
+				name: 'Login',
+				children: [
+					{ id: 'go', type: 'button', text: 'Sign in' },
+					{ id: 'forgot', type: 'button', text: 'Forgot password?', fill: 'transparent', textColor: '$primary' },
+				],
+			},
+			'screen'
+		)
+	)
+	for (const mode of ['light', 'dark'] as const) {
+		const html = treeToHtml(tree, { mode, primary: '#5c3a21' })
+		// The base rule resets the UA button background, so a button with no inline background is transparent.
+		assert.match(html, /\nbutton \{[^}]*background: none;/)
+		const buttons = [...html.matchAll(/<button style="([^"]*)">[^<]*?([A-Za-z ?]+)<\/button>/g)]
+		const forgot = buttons.find((m) => m[2] === 'Forgot password?')
+		const signIn = buttons.find((m) => m[2] === 'Sign in')
+		assert.ok(forgot && signIn)
+		assert.doesNotMatch(forgot[1], /background:/)
+		assert.match(signIn[1], /background: var\(--primary\)/)
+	}
+})
+
 test('layoutTree accepts a custom text measurer', () => {
 	const measure = (text: string, fs: number, maxWidth?: number) => wrapWith((s) => s.length * 10, text, fs, maxWidth)
 	const out = layoutTree({ id: 't', kind: 'text', w: 0, h: 0, text: 'abcd', fontSize: 10, sizing: { w: 'hug', h: 'hug' } }, { measure })
