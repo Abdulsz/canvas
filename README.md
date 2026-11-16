@@ -2,7 +2,7 @@
 
 **Design app screens by talking.** Describe a screen out loud (or type it) and Grok Design, an xAI Grok agent, builds it on a Figma-like canvas while it talks you through it. Then keep the conversation going: "make the button brown", "add a menu screen and connect it from sign in", "switch everything to dark mode", "critique my design". Several people can work in the same file alongside the agent.
 
-![Two coffee-app screens designed by voice, with the Layers panel, agent conversation and voice dock](docs/images/hero.png)
+![Two coffee-app screens designed by voice, with the Layers panel, agent conversation and voice dock](.github/images/hero.png)
 
 **Built with** React · TypeScript · [tldraw](https://tldraw.dev) · xAI Grok (tool calling, speech-to-text, text-to-speech, realtime voice) · Node.js WebSockets · a Figma-style auto-layout engine.
 
@@ -15,17 +15,7 @@
 - **Export to code.** Any screen copies out as standalone HTML/CSS.
 - **Tested.** 49 unit tests (layout engine, agent loop, guard, routing) plus Playwright end-to-end tests with two collaborators, scripted voice, and live runs against xAI.
 
-![A design critique: outlined elements and notes beside each screen](docs/images/critique.png)
-
-### Demo video
-
-A 90-second walkthrough of a real recorded Grok session (login screen, button edit, a second screen with a flow arrow, dark mode, panels, code export, critique). The video is built from code with [Clipmunk](https://www.npmjs.com/package/clipmunk) (dev-only, `client/src/clipmunk/`): the scenes replay the recorded tool calls through the app's own executor, show the real time since each request, and mark every skipped wait. Voiceover script: [`docs/demo-narration.md`](docs/demo-narration.md).
-
-```bash
-cd client && npx clipmunk export --sequence demo   # writes client/.clipmunk/exports/demo.mp4
-```
-
-The design behind the pivot from the earlier teaching whiteboard is in [`docs/DESIGN_PLAN.md`](docs/DESIGN_PLAN.md).
+![A design critique: outlined elements and notes beside each screen](.github/images/critique.png)
 
 ## Quick start
 

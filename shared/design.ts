@@ -3,7 +3,7 @@
 //
 // Every design element is one tldraw shape of type 'ui'. Visual properties are
 // shape props (validated on both sides); layout lives in shape meta so it can
-// evolve without schema migrations. See docs/DESIGN_PLAN.md.
+// evolve without schema migrations.
 
 import { T } from '@tldraw/validate'
 import { artSvg, chartSvg, homeIndicatorSvg, isPhoneScreen, normalizeChart, normalizeTabs, statusBarSvg, tabBarSvg, type ChartSpec, type TabsSpec } from './visuals.ts'
