@@ -1,6 +1,29 @@
-# Grok Design
+# Voice-to-UI Design Tool
 
-A shared, voice-driven UI and wireframe design tool. You describe app screens out loud (or type), and Grok Design, an xAI Grok agent, builds them on a Figma-like [tldraw](https://tldraw.dev) canvas while it talks. Then you keep the conversation going: "make the button green", "add a toggle", "switch to dark mode", "add a sign-up screen and connect it". Several people can join the same file, edit alongside the agent, and ask it for a critique.
+**Design app screens by talking.** Describe a screen out loud (or type it) and Grok Design, an xAI Grok agent, builds it on a Figma-like canvas while it talks you through it. Then keep the conversation going: "make the button brown", "add a menu screen and connect it from sign in", "switch everything to dark mode", "critique my design". Several people can work in the same file alongside the agent.
+
+![Two coffee-app screens designed by voice, with the Layers panel, agent conversation and voice dock](docs/images/hero.png)
+
+**Built with** React · TypeScript · [tldraw](https://tldraw.dev) · xAI Grok (tool calling, speech-to-text, text-to-speech, realtime voice) · Node.js WebSockets · a Figma-style auto-layout engine.
+
+### Highlights
+
+- **One continuous voice session.** Hands-free mic, streamed spoken replies, barge-in, and a placeholder screen on the canvas within about a second of asking. Small edits land in about 1.5s, full screens in about 7-16s, section by section.
+- **Figma's document model.** Screens, nested frames with auto layout (hug / fill / fixed), light and dark color tokens, Layers and Design panels, prototype flow arrows.
+- **The agent works through real tools.** Grok calls `create_screen`, `add_nodes`, `update_node`, `set_theme`, `connect_screens` and more; they run in the browser and sync to every collaborator.
+- **Honest critiques.** Critique notes are grounded in measured problems (overflow, clipped text, contrast, touch-target size) and the server rejects claims the measurements don't support.
+- **Export to code.** Any screen copies out as standalone HTML/CSS.
+- **Tested.** 49 unit tests (layout engine, agent loop, guard, routing) plus Playwright end-to-end tests with two collaborators, scripted voice, and live runs against xAI.
+
+![A design critique: outlined elements and notes beside each screen](docs/images/critique.png)
+
+### Demo video
+
+A 90-second walkthrough of a real recorded Grok session (login screen, button edit, a second screen with a flow arrow, dark mode, panels, code export, critique). The video is built from code with [Clipmunk](https://www.npmjs.com/package/clipmunk) (dev-only, `client/src/clipmunk/`): the scenes replay the recorded tool calls through the app's own executor, show the real time since each request, and mark every skipped wait. Voiceover script: [`docs/demo-narration.md`](docs/demo-narration.md).
+
+```bash
+cd client && npx clipmunk export --sequence demo   # writes client/.clipmunk/exports/demo.mp4
+```
 
 The design behind the pivot from the earlier teaching whiteboard is in [`docs/DESIGN_PLAN.md`](docs/DESIGN_PLAN.md).
 
@@ -162,7 +185,6 @@ Set `CHROMIUM_PATH` to use a preinstalled Chromium and `OUT_DIR` for screenshots
 - **Hard-coded colors:** for "make the button brown" Grok sets a hex fill, which (correctly) doesn't follow dark mode. `$primary` is lightened automatically in dark mode when the brand color is too dark to read.
 - **Proxies:** the server's `fetch` honors `HTTPS_PROXY` (`NODE_USE_ENV_PROXY=1` in the server scripts). The browser's Live voice WebSocket uses the browser's own proxy settings.
 - **The mock agent is scripted.** It recognizes a fixed set of screens and edit phrases, and edits the newest screen.
-- **Comment placement is simple.** Comments go to the right of the screen and are nudged to the nearest free spot, which can land far from the node when screens are packed.
 - **Code export is a starting point:** static HTML/CSS with absolute sizes from the layout, no components or responsiveness.
 - **Echo cancellation depends on the browser.** Headphones are the most reliable setup if the agent keeps interrupting itself.
 - **No authentication.** Anyone with a file link can join, and names are self-declared.
